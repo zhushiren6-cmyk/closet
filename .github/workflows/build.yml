@@ -33,6 +33,17 @@ jobs:
           set -o pipefail
           gradle testDebugUnitTest assembleDebug --console=plain 2>&1 | tee build.log
 
+      - name: Report unit test count
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import glob, xml.etree.ElementTree as ET
+          t=f=e=0
+          for p in glob.glob("app/build/test-results/testDebugUnitTest/*.xml"):
+              r=ET.parse(p).getroot(); t+=int(r.get("tests",0)); f+=int(r.get("failures",0)); e+=int(r.get("errors",0))
+          print(f"::notice::unit tests: {t} run, {f} failed, {e} errors")
+          PY
+
       - name: Surface build errors as annotations
         if: failure()
         run: |
