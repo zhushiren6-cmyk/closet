@@ -7,9 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
 concurrency:
   group: pages
@@ -18,9 +16,6 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -31,11 +26,16 @@ jobs:
           set -o pipefail
           node --test web/test/logic.test.mjs 2>&1 | tee test.log
           echo "::notice::web $(grep -E '^# (tests|pass|fail) ' test.log | tr '\n' ' ')"
-      - name: Stamp cache version so phones pick up the new build
-        run: sed -i "s/const CACHE = 'closet-v1'/const CACHE = 'closet-${GITHUB_SHA::8}'/" web/sw.js
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: web
-      - id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Prepare site
+        run: |
+          mkdir -p site && cp -r web/. site/ && rm -rf site/test && touch site/.nojekyll
+          # New cache name per build so phones pick up the update on next open.
+          sed -i "s/const CACHE = 'closet-v1'/const CACHE = 'closet-${GITHUB_SHA::8}'/" site/sw.js
+      - name: Publish to gh-pages (GitHub Pages serves this branch)
+        run: |
+          cd site
+          git init -q -b gh-pages
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A && git commit -qm "Publish ${GITHUB_SHA::8}"
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
