@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Closet" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/accent</item>
+        <item name="colorOnPrimary">@color/onAccent</item>
+        <item name="colorSecondaryContainer">@color/accentSoft</item>
+        <item name="colorOnSecondaryContainer">@color/accentText</item>
+        <item name="colorSurface">@color/card</item>
+        <item name="colorSurfaceContainer">@color/card</item>
+        <item name="colorOnSurface">@color/text</item>
+        <item name="colorOnSurfaceVariant">@color/textSub</item>
+        <item name="colorOutline">@color/outline</item>
+        <item name="android:windowBackground">@color/bg</item>
+    </style>
+</resources>

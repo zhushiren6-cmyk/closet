@@ -1,0 +1,55 @@
+name: Build APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Accept Android SDK licenses (SDK is preinstalled on the runner)
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+
+      - name: Unit tests + debug APK
+        run: |
+          set -o pipefail
+          gradle testDebugUnitTest assembleDebug --console=plain 2>&1 | tee build.log
+
+      - name: Surface build errors as annotations
+        if: failure()
+        run: |
+          grep -E "^e: |error:|FAILURE|What went wrong|Could not|> |FAILED|Exception|expected" build.log | head -60 | while IFS= read -r l; do echo "::error::$l"; done
+          for f in app/build/test-results/testDebugUnitTest/*.xml; do
+            [ -f "$f" ] && grep -A3 "<failure" "$f" | head -20 | while IFS= read -r l; do echo "::error::$l"; done
+          done
+          true
+
+      - name: Rename APK
+        run: cp app/build/outputs/apk/debug/app-debug.apk Closet.apk
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v0.1.${{ github.run_number }}
+          name: 衣橱 v0.1.${{ github.run_number }}
+          body: "build #${{ github.run_number }} · ${{ github.sha }}"
+          files: Closet.apk
+          make_latest: true
