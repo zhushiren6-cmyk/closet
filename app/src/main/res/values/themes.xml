@@ -2,14 +2,20 @@
 <resources>
     <style name="Theme.Closet" parent="Theme.Material3.DayNight.NoActionBar">
         <item name="colorPrimary">@color/accent</item>
-        <item name="colorOnPrimary">@color/onAccent</item>
+        <item name="colorOnPrimary">@color/onInk</item>
         <item name="colorSecondaryContainer">@color/accentSoft</item>
-        <item name="colorOnSecondaryContainer">@color/accentText</item>
-        <item name="colorSurface">@color/card</item>
-        <item name="colorSurfaceContainer">@color/card</item>
+        <item name="colorOnSecondaryContainer">@color/text</item>
+        <item name="colorSurface">@color/bg</item>
+        <item name="colorSurfaceContainer">@color/bg</item>
+        <item name="colorSurfaceContainerLow">@color/bg</item>
+        <item name="colorSurfaceContainerHigh">@color/bg</item>
+        <item name="colorSurfaceContainerHighest">@color/tile</item>
         <item name="colorOnSurface">@color/text</item>
         <item name="colorOnSurfaceVariant">@color/textSub</item>
-        <item name="colorOutline">@color/outline</item>
+        <item name="colorOutline">@color/line</item>
+        <item name="colorOutlineVariant">@color/line</item>
         <item name="android:windowBackground">@color/bg</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>
 </resources>

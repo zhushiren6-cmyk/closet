@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.drawable.GradientDrawable
 import android.text.InputType
+import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -11,8 +12,6 @@ import androidx.appcompat.app.AlertDialog
 import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import com.google.android.material.textfield.TextInputEditText
-import com.google.android.material.textfield.TextInputLayout
 
 /** The editable part of an item, shared by import drafts and saved items. */
 data class Fields(
@@ -29,7 +28,7 @@ fun Context.colorDot(name: String, sizeDp: Int = 14): GradientDrawable =
     GradientDrawable().apply {
         shape = GradientDrawable.OVAL
         setColor(Colors.of(name).hex)
-        setStroke(dp(1), col(R.color.outline))
+        setStroke(dp(1), col(R.color.line))
         setSize(dp(sizeDp), dp(sizeDp))
     }
 
@@ -52,7 +51,7 @@ private fun ChipGroup.checkedText(): String? =
     (0 until childCount).map { getChildAt(it) as Chip }.firstOrNull { it.isChecked }?.text?.toString()
 
 /**
- * Edits [f] in a dialog. [extra] adds buttons above the form (e.g. 换照片 / 删除); they close the dialog first.
+ * Edits [f] in a dialog. [extra] adds text actions under the photo (e.g. 换照片 / 删除); they close the dialog first.
  * [onSave] receives the edited copy only when the user taps 保存.
  */
 fun Context.showItemEditor(
@@ -62,46 +61,45 @@ fun Context.showItemEditor(
     extra: List<Pair<String, () -> Unit>> = emptyList(),
     onSave: (Fields) -> Unit,
 ) {
-    val c = column(22, 8)
+    val c = column(24, 4)
     var dialog: AlertDialog? = null
 
     if (preview != null) {
-        val iv = ImageView(this).apply {
+        val frame = FrameLayout(this).apply { background = backdrop(); clipToOutline = true }
+        frame.addView(ImageView(this).apply {
             setImageBitmap(preview)
             scaleType = ImageView.ScaleType.FIT_CENTER
-            background = rounded(col(R.color.bg), dpf(14))
-        }
-        c.addView(iv, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(160)))
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+        })
+        c.addView(frame, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(180)))
     }
     if (extra.isNotEmpty()) {
         val r = row()
         extra.forEachIndexed { i, (label, act) ->
-            r.addView(btn(label, Btn.TONAL) { dialog?.dismiss(); act() }, weight1().apply { if (i > 0) marginStart = dp(8) })
+            val color = if (label == "删除") col(R.color.warn) else col(R.color.text)
+            r.addView(link(label, 14f, color) { dialog?.dismiss(); act() }, ww(start = if (i > 0) 20 else 0))
         }
-        c.addView(r, mw(top = 10))
+        c.addView(r, mw(top = 4))
     }
 
-    val til = TextInputLayout(this).apply { hint = "名称" }
-    val name = TextInputEditText(til.context).apply {
-        inputType = InputType.TYPE_CLASS_TEXT
-        setText(f.name)
-    }
-    til.addView(name)
-    c.addView(til, mw(top = 12))
+    val (til, name) = field("名称")
+    name.inputType = InputType.TYPE_CLASS_TEXT
+    name.setText(f.name)
+    c.addView(til, mw(top = 10))
 
-    c.addView(tv("类别", 13f, col(R.color.textSub)), mw(top = 12))
+    c.addView(eyebrow("类别"), mw(top = 16, bottom = 2))
     val cats = single(Cat.ALL, f.cat)
     c.addView(cats)
 
-    c.addView(tv("颜色", 13f, col(R.color.textSub)), mw(top = 8))
+    c.addView(eyebrow("颜色"), mw(top = 12, bottom = 2))
     val colors = single(Colors.NAMES, f.color) { colorDot(it) }
     c.addView(colors)
 
-    c.addView(tv("厚度", 13f, col(R.color.textSub)), mw(top = 8))
+    c.addView(eyebrow("厚度"), mw(top = 12, bottom = 2))
     val warm = single(Warmth.LABELS, Warmth.label(f.warmth))
     c.addView(warm)
 
-    c.addView(tv("适合场合（不选 = 都行）", 13f, col(R.color.textSub)), mw(top = 8))
+    c.addView(eyebrow("适合场合 · 不选 = 都行"), mw(top = 12, bottom = 2))
     val occ = chipGroup(Occasion.ALL.map { o -> filterChip(o).apply { isChecked = o in f.occasions } })
     c.addView(occ, mw(bottom = 8))
 
@@ -121,4 +119,6 @@ fun Context.showItemEditor(
             onSave(out)
         }
         .show()
+    dialog?.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(col(R.color.text))
+    dialog?.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(col(R.color.textSub))
 }

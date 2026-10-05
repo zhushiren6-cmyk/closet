@@ -143,18 +143,19 @@ fun Context.showCropDialog(bmp: Bitmap, init: Rect?, title: String, onDone: (Rec
     val d = Dialog(this, R.style.Theme_Closet)
     val crop = CropView(this, bmp, init)
     val scroll = ScrollView(this).apply {
-        setBackgroundColor(Color.BLACK)
+        setBackgroundColor(col(R.color.tile))
         addView(crop)
     }
     val root = column().apply { setBackgroundColor(col(R.color.bg)) }
-    val head = column(18, 12)
+    val head = column(22, 14)
     head.addView(tv(title, 18f, bold = true))
-    head.addView(tv("拖角调整大小，拖框移动；点图上别处可把框直接移过去。长图可以上下滑。", 13f, col(R.color.textSub)), mw(top = 4))
+    head.addView(tv("拖四角调整大小，拖框移动；点图上别处，框会移过去。长图可以上下滑。", 13f, col(R.color.textSub)), mw(top = 6))
     root.addView(head)
     root.addView(scroll, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
-    val bar = row().apply { setPadding(dp(16), dp(10), dp(16), dp(12)) }
-    bar.addView(btn("取消", Btn.OUTLINED) { d.dismiss() }, weight1())
-    bar.addView(btn("用这个框") { onDone(crop.boxRect()); d.dismiss() }, weight1().apply { marginStart = dp(10) })
+    val bar = row().apply { setPadding(dp(22), dp(12), dp(22), dp(14)) }
+    bar.addView(link("取消") { d.dismiss() })
+    bar.addView(View(this), weight1())
+    bar.addView(pill("用这个框") { onDone(crop.boxRect()); d.dismiss() }, LinearLayout.LayoutParams(dp(170), LinearLayout.LayoutParams.WRAP_CONTENT))
     root.addView(bar)
     ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
         val b = insets.getInsets(WindowInsetsCompat.Type.systemBars())

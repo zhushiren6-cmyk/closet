@@ -20,7 +20,6 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import com.google.android.material.button.MaterialButton
-import com.google.android.material.checkbox.MaterialCheckBox
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import java.io.File
 import java.util.UUID
@@ -40,20 +39,38 @@ class ImportActivity : AppCompatActivity() {
     }
 
     private inner class Section(val index: Int, val uri: Uri) {
-        val view = column(18, 14)
+        val view = column()
+        val head = eyebrow("第 ${index + 1} 张")
+        val actions = row()
+        private val statusRow = row().apply { setPadding(0, dp(16), 0, dp(16)) }
+        private val dot = View(this@ImportActivity)
         val status = tv("排队中…", 13f, col(R.color.textSub))
         val draftsBox = column()
-        val actions = row()
         @Volatile var src: File? = null
         val drafts = mutableListOf<Draft>()
         @Volatile var busy = false
         @Volatile var done = false
 
         init {
-            view.addView(tv("第 ${index + 1} 张", 16f, bold = true))
-            view.addView(status, mw(top = 2))
-            view.addView(draftsBox, mw(top = 6))
-            view.addView(actions, mw(top = 8))
+            val h = row()
+            h.addView(head, weight1())
+            h.addView(actions)
+            view.addView(h)
+            view.addView(hairline(), hairlineParams(top = 2))
+            statusRow.addView(dot, LinearLayout.LayoutParams(dp(6), dp(6)))
+            statusRow.addView(status, weight1().apply { marginStart = dp(10) })
+            view.addView(statusRow)
+            view.addView(draftsBox)
+            setStatus("排队中…")
+        }
+
+        /** null hides the status line. */
+        fun setStatus(text: String?, warn: Boolean = false) {
+            statusRow.visibility = if (text == null) View.GONE else View.VISIBLE
+            status.text = text.orEmpty()
+            val c = col(if (warn) R.color.warn else R.color.textSub)
+            status.setTextColor(c)
+            dot.background = oval(if (warn) c else col(R.color.accent))
         }
     }
 
@@ -77,24 +94,31 @@ class ImportActivity : AppCompatActivity() {
         if (uris.isEmpty()) { finish(); return }
         workDir.listFiles()?.forEach { it.delete() }
 
-        val list = column(16, 8)
-        list.addView(tv(if (manual) "手动添加" else "识别订单截图", 26f, bold = true), mw(top = 12))
+        val list = column(22, 0)
+        list.addView(tv("←", 22f, col(R.color.textSub)).apply {
+            setPadding(0, dp(14), dp(16), dp(4))
+            setOnClickListener { onBackPressedDispatcher.onBackPressed() }
+        }, ww())
+        list.addView(serifTitle(if (manual) "手动添加" else "确认识别结果", 28f), mw(top = 12))
         list.addView(tv(
-            if (manual) "每张图先当成一件衣服。点「框图」框出衣服，点卡片填名称和类别。"
-            else "逐张识别中。识别完可以点卡片修改，点「框图」调整商品图；没认出来的可以「手动框一件」。",
+            if (manual) "每张图先当成一件衣服。点「调整框选」框出衣服，点一行填名称和类别。"
+            else "逐张识别，一张大约 5–30 秒。点一行可修改名称和类别，没认出来的可以手动框。",
             13f, col(R.color.textSub)
-        ), mw(top = 2, bottom = 14))
+        ), mw(top = 8, bottom = 26))
         uris.forEachIndexed { i, u ->
             val s = Section(i, u)
             sections += s
-            list.addView(card(s.view), mw(bottom = 12))
+            list.addView(s.view, mw(bottom = 28))
         }
 
-        val bar = row().apply { setPadding(dp(16), dp(10), dp(16), dp(12)); setBackgroundColor(col(R.color.card)) }
+        val bar = column().apply { setBackgroundColor(col(R.color.bg)) }
+        bar.addView(hairline(), hairlineParams())
+        val barRow = row().apply { setPadding(dp(22), dp(14), dp(22), dp(14)) }
         summaryTv = tv("", 13f, col(R.color.textSub))
-        bar.addView(summaryTv, weight1())
-        saveBtn = btn("入库") { commit() }.apply { setPadding(dp(22), 0, dp(22), 0) }
-        bar.addView(saveBtn)
+        barRow.addView(summaryTv, weight1())
+        saveBtn = pill("入库") { commit() }
+        barRow.addView(saveBtn, LinearLayout.LayoutParams(dp(170), LinearLayout.LayoutParams.WRAP_CONTENT))
+        bar.addView(barRow)
 
         val root = column().apply { setBackgroundColor(col(R.color.bg)) }
         root.addView(ScrollView(this).apply { addView(list) }, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
@@ -129,7 +153,7 @@ class ImportActivity : AppCompatActivity() {
 
     private fun process(s: Section) {
         s.busy = true
-        ui { s.status.text = if (manual) "读取中…" else "识别中…（一张大约 5–30 秒）"; s.actions.removeAllViews() }
+        ui { s.setStatus(if (manual) "读取中…" else "识别中…"); s.actions.removeAllViews() }
         try {
             val bmp = try {
                 Images.decodeForImport(this, s.uri)
@@ -185,21 +209,20 @@ class ImportActivity : AppCompatActivity() {
     // ---------------- rendering ----------------
 
     private fun fail(s: Section, msg: String, raw: String?, canRetry: Boolean) {
-        s.status.text = msg
-        s.status.setTextColor(col(R.color.warn))
+        s.setStatus(msg, warn = true)
         s.draftsBox.removeAllViews()
         if (!raw.isNullOrBlank()) {
-            s.draftsBox.addView(tv("服务返回：${raw.take(300)}", 11f, col(R.color.textSub)).apply { setTextIsSelectable(true) }, mw(top = 4))
+            s.draftsBox.addView(tv("服务返回：${raw.take(300)}", 11f, col(R.color.textSub)).apply { setTextIsSelectable(true) }, mw(bottom = 8))
         }
         s.actions.removeAllViews()
-        if (canRetry) s.actions.addView(btn("重试", Btn.TONAL) { retry(s) }, weight1())
-        if (s.src != null) s.actions.addView(btn("手动框一件", Btn.OUTLINED) { addByHand(s) }, weight1().apply { if (canRetry) marginStart = dp(8) })
+        if (canRetry) s.actions.addView(link("重试", 12f) { retry(s) })
+        if (s.src != null) s.actions.addView(link("手动框一件", 12f) { addByHand(s) }, ww(start = if (canRetry) 16 else 0))
         updateSummary()
     }
 
     private fun retry(s: Section) {
         if (s.busy) return
-        s.status.setTextColor(col(R.color.textSub))
+        s.setStatus("识别中…")
         s.draftsBox.removeAllViews()
         s.done = false
         s.busy = true
@@ -208,51 +231,43 @@ class ImportActivity : AppCompatActivity() {
     }
 
     private fun renderSection(s: Section, note: String) {
-        s.status.setTextColor(col(R.color.textSub))
-        s.status.text = when {
-            manual -> "点「框图」框出衣服"
-            s.drafts.isEmpty() -> "没认出服饰" + (if (note.isNotBlank()) "：$note" else "")
-            else -> "认出 ${s.drafts.size} 件"
-        }
+        s.head.text = if (manual || s.drafts.isEmpty()) "第 ${s.index + 1} 张" else "第 ${s.index + 1} 张 · 认出 ${s.drafts.size} 件"
+        s.setStatus(if (s.drafts.isEmpty()) "没认出服饰" + (if (note.isNotBlank()) "：$note" else "") else null)
         s.draftsBox.removeAllViews()
-        s.drafts.forEach { d -> s.draftsBox.addView(draftRow(s, d), mw(top = 8)) }
+        s.drafts.forEach { d ->
+            s.draftsBox.addView(draftRow(s, d))
+            s.draftsBox.addView(hairline(), hairlineParams())
+        }
         s.actions.removeAllViews()
-        if (s.src != null) s.actions.addView(btn("手动框一件", Btn.OUTLINED) { addByHand(s) }, weight1())
+        if (s.src != null) s.actions.addView(link("手动框一件", 12f) { addByHand(s) })
         updateSummary()
     }
 
     private fun draftRow(s: Section, d: Draft): View {
         val r = row().apply {
-            background = rounded(col(R.color.bg), dpf(14))
-            setPadding(dp(8), dp(8), dp(4), dp(8))
-            alpha = if (d.selected) 1f else 0.55f
+            setPadding(0, dp(14), 0, dp(14))
+            alpha = if (d.selected) 1f else 0.5f
         }
-        val img = FrameLayout(this)
+        val img = FrameLayout(this).apply { background = backdrop(); clipToOutline = true }
         val t = d.thumb
-        if (t != null) img.addView(ImageView(this).apply { setImageBitmap(t); scaleType = ImageView.ScaleType.CENTER_CROP })
-        else {
-            img.background = rounded(Colors.of(d.f.color).hex, dpf(10))
-            img.addView(tv("无图", 11f, col(R.color.textSub)).apply { gravity = Gravity.CENTER }, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
-        }
-        r.addView(card(img).apply { radius = dpf(10) }, LinearLayout.LayoutParams(dp(68), dp(68)))
+        if (t != null) img.addView(ImageView(this).apply {
+            setImageBitmap(t); scaleType = ImageView.ScaleType.FIT_CENTER; setPadding(dp(6), dp(6), dp(6), dp(6))
+        }, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+        else img.addView(View(this).apply { background = colorDot(d.f.color, 22) }, FrameLayout.LayoutParams(dp(22), dp(22), Gravity.CENTER))
+        r.addView(img, LinearLayout.LayoutParams(dp(64), dp(64)))
 
-        val info = column(10, 0)
-        info.addView(tv(d.f.name, 15f, bold = true).apply { maxLines = 2 })
+        val info = column(14, 0)
+        info.addView(tv(d.f.name, 15f).apply { maxLines = 2 })
         val meta = "${d.f.cat} · ${d.f.color} · ${Warmth.label(d.f.warmth)}" +
             (if (d.f.occasions.isNotEmpty()) " · " + d.f.occasions.joinToString("/") else "")
-        info.addView(tv(meta, 12f, col(R.color.textSub)))
-        if (d.note.isNotEmpty()) info.addView(tv(d.note, 11f, col(R.color.warn)))
-        if (d.box == null) info.addView(tv("没框到商品图，点「框图」", 11f, col(R.color.warn)))
+        info.addView(tv(meta, 12f, col(R.color.textSub)), mw(top = 4))
+        if (d.note.isNotEmpty()) info.addView(tv(d.note, 11f, col(R.color.warn)), mw(top = 4))
+        val boxLink = if (d.box == null) link("没框到商品图，点这里框选", 12f, col(R.color.warn)) { rebox(s, d) }
+        else link("调整框选", 12f) { rebox(s, d) }
+        info.addView(boxLink.apply { setPadding(0, dp(4), dp(8), dp(2)) }, ww())
         r.addView(info, weight1())
 
-        val side = column().apply { gravity = Gravity.CENTER_HORIZONTAL }
-        val cb = MaterialCheckBox(this).apply {
-            isChecked = d.selected
-            setOnCheckedChangeListener { _, v -> d.selected = v; r.alpha = if (v) 1f else 0.55f; updateSummary() }
-        }
-        side.addView(cb)
-        side.addView(btn("框图", Btn.TEXT) { rebox(s, d) }.apply { minHeight = dp(34); textSize = 13f; setPadding(dp(8), 0, dp(8), 0) })
-        r.addView(side)
+        r.addView(RoundCheck(this, d.selected) { v -> d.selected = v; r.alpha = if (v) 1f else 0.5f; updateSummary() })
 
         r.setOnClickListener {
             showItemEditor("修改", d.f.copy(occasions = d.f.occasions.toMutableList()), d.thumb) { nf ->
@@ -289,6 +304,7 @@ class ImportActivity : AppCompatActivity() {
         summaryTv.text = if (running > 0) "还有 $running 张在处理" else "已选 $sel 件"
         saveBtn.text = if (sel > 0) "入库 $sel 件" else "入库"
         saveBtn.isEnabled = sel > 0
+        saveBtn.alpha = if (sel > 0) 1f else 0.3f
     }
 
     // ---------------- commit ----------------
