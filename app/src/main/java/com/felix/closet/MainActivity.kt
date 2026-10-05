@@ -119,7 +119,7 @@ class MainActivity : AppCompatActivity() {
             }
             val t = tv(label, 13f, col(R.color.textSub)).apply { letterSpacing = 0.12f }
             val dot = View(this).apply { background = oval(col(R.color.accent)) }
-            cell.addView(t)
+            cell.addView(t, ww())
             cell.addView(dot, LinearLayout.LayoutParams(dp(4), dp(4)).apply { topMargin = dp(6) })
             navCells += t to dot
             navRow.addView(cell, weight1())
@@ -384,7 +384,7 @@ class MainActivity : AppCompatActivity() {
         c.addView(sortTv, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { gravity = Gravity.END })
 
         val empty = column(32, 0).apply { gravity = Gravity.CENTER_HORIZONTAL; setPadding(dp(32), dp(70), dp(32), 0) }
-        empty.addView(serifTitle("衣橱还是空的", 22f))
+        empty.addView(serifTitle("衣橱还是空的", 22f), ww())
         empty.addView(tv(
             "选几张购物订单截图，淘宝、京东、拼多多都行，或者直接拍衣服。AI 会认出每一件，分好类，裁出商品图。",
             13f, col(R.color.textSub)
