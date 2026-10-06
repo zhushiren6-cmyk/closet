@@ -985,4 +985,18 @@ async function doExport() {
     });
     navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => r.update()).catch(() => {});
   }
+  // iPhone keeps a home-screen app alive in the background for days; opening it again only makes it visible,
+  // nothing re-renders. So on every return (and at midnight while it is open) check whether the day changed.
+  const shownDay = { v: today() };
+  const onReturn = () => {
+    if (document.visibilityState !== 'visible') return;
+    navigator.serviceWorker?.getRegistration().then(r => r?.update()).catch(() => {});
+    if (shownDay.v === today() || document.querySelector('.screen, .scrim')) return; // a sheet is open: next tick
+    shownDay.v = today();
+    if (page === 'today') renderToday(); // drops yesterday's outfit; other pages pick the new day up when shown
+  };
+  document.addEventListener('visibilitychange', onReturn);
+  window.addEventListener('pageshow', onReturn);
+  window.addEventListener('focus', onReturn);
+  setInterval(onReturn, 60000);
 })();
