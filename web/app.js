@@ -1,5 +1,5 @@
 import {
-  Cat, OCCASIONS, WARMTH, WEATHER, COLORS, colorOf, weatherOf, warmthLabel, OutfitEngine, dayKey, daysBetween,
+  Cat, OCCASIONS, WARMTH, WEATHER, COLORS, colorOf, weatherOf, warmthLabel, OutfitEngine, dayKey, daysBetween, normalizeColor,
 } from './engine.js';
 import { PROVIDERS, providerOf, missingOf, modelOf, recognize, recognizeFortune, testConnection, chat, VisionError } from './vision.js';
 import { computeFortune } from './fortune.js';
@@ -265,24 +265,33 @@ function ensureLibs() {
   ]);
 }
 
-// One AI sentence per day (and per birthday), cached; fetched in the background, never blocks the page.
-const AI_LINE_KEY = 'closet.aiLine';
+// 「建议 / 避免」 for the computed fortune, written by the model once per day and cached. Never blocks the page.
+const AI_LINE_KEY = 'closet.aiAdvice';
 let aiLineTried = '';
-function aiLine(f) {
+function aiAdvice(f) {
   const k = `${today()}|${JSON.stringify(settings.birth)}|${f.colors.join()}|${f.stones.join()}`;
-  try { const c = JSON.parse(localStorage.getItem(AI_LINE_KEY) || 'null'); if (c?.k === k) return c.text; } catch { /* ignore */ }
-  if (aiLineTried === k || missingOf(settings, providerOf(settings.provider))) return '';
+  try { const c = JSON.parse(localStorage.getItem(AI_LINE_KEY) || 'null'); if (c?.k === k) return c.v; } catch { /* ignore */ }
+  if (aiLineTried === k || missingOf(settings, providerOf(settings.provider))) return null;
   aiLineTried = k;
   // Only today's result goes out — never the pillars or chart, which would reveal the birth date/time.
-  chat(settings, `今日推算结果：${JSON.stringify({ 今日: f.today, 日主: f.master, 喜用: f.elements, 幸运色: f.colors, 忌: f.avoid, 推荐水晶: f.stones })}`, {
-    system: '你是轻松的穿搭小助手。根据给定的五行推算结果，写一句 30 字以内的今日穿搭提示。语气轻松温和，可以提到幸运色或水晶，不恐吓、不承诺效果、不出现“迷信”“保证”等字眼。只输出这一句话，不要引号。',
+  chat(settings, `今日推算结果：${JSON.stringify({ 今日: f.today, 日主: f.master, 幸运五行: f.element, 幸运色: f.colors, 幸运配饰: f.stones })}`, {
+    system: '你是运势小助手。根据给定的今日推算结果，给出今天的「建议」和「避免」，各是两个 2-4 字的短语，用顿号隔开，例如 建议“约朋友、晒心情”，避免“不走心、客套”。语气轻松，不恐吓、不承诺效果。只输出 JSON：{"suggest":"…","avoid":"…"}，不要其他文字。',
     maxTokens: 300, timeoutMs: 30000,
   }).then(t => {
-    const text = t.replace(/^["“'「]+|["”'」]+$/g, '').trim().slice(0, 60);
-    try { localStorage.setItem(AI_LINE_KEY, JSON.stringify({ k, text })); } catch { /* ignore */ }
+    const o = JSON.parse(t.slice(t.indexOf('{'), t.lastIndexOf('}') + 1));
+    const v = { suggest: String(o.suggest ?? '').trim().slice(0, 20), avoid: String(o.avoid ?? '').trim().slice(0, 20) };
+    if (!v.suggest && !v.avoid) return;
+    try { localStorage.setItem(AI_LINE_KEY, JSON.stringify({ k, v })); } catch { /* ignore */ }
     if (page === 'today') renderToday();
-  }).catch(() => { /* no line today; the computed result still stands */ });
-  return '';
+  }).catch(() => { /* no advice today; the computed colour and accessory still stand */ });
+  return null;
+}
+
+const colorName = c => (c.length === 1 ? `${c}色` : c);
+
+function luckCell(icon, name, label) {
+  return h('div', { style: { textAlign: 'center', minWidth: 0 } },
+    icon, h('div.ell', { style: { fontSize: '14px', marginTop: '8px' } }, name), h('div.tiny.sub', { style: { marginTop: '2px' } }, label));
 }
 
 function fortuneRow() {
@@ -295,20 +304,28 @@ function fortuneRow() {
       h('div.grow.sub.small', '今日运势'), actions);
   }
   const calc = f.source === 'calc';
-  const line = calc ? aiLine(f) : '';
+  const adv = calc ? aiAdvice(f) : (f.suggest || f.avoidDo ? { suggest: f.suggest, avoid: f.avoidDo } : null);
   const backToCalc = !calc && settings.autoFortune ? h('button.link.sm.sub', { style: { paddingBottom: 0 }, onclick: async () => {
     await store.setFortune(today(), null); outfit = null; regenerate();
   } }, '改用五行推算') : null;
-  return h('div', { style: { padding: '12px 0', borderBottom: '1px solid var(--line)' } },
+  const cells = [
+    ...f.colors.slice(0, 2).map(c => luckCell(
+      h('div', { style: { width: '40px', height: '40px', borderRadius: '10px', margin: '0 auto', background: colorOf(c).hex, boxShadow: 'inset 0 0 0 1px rgba(128,128,128,.25)' } }),
+      colorName(c), '幸运色')),
+    ...f.stones.slice(0, 2).map(st => luckCell(
+      h('div', { style: { width: '28px', height: '28px', margin: '6px auto 6px', transform: 'rotate(45deg)', borderRadius: '5px',
+        background: colorOf(normalizeColor(st)).hex, boxShadow: 'inset 0 0 0 1px rgba(128,128,128,.25)' } }),
+      st, '幸运配饰')),
+  ];
+  return h('div', { style: { padding: '12px 0 14px', borderBottom: '1px solid var(--line)' } },
     h('div.row', h('div.eyebrow.grow', { style: { fontSize: '10px' } },
-      calc ? `今日运势 · ${f.today}${f.master ? ' · 日主' + f.master : ''}` : '今日运势 · 来自截图 / 手动'), actions),
-    h('div', { style: { fontSize: '14px', marginTop: '6px', lineHeight: 1.8 } },
-      f.colors.length ? h('span', '幸运色 ', f.colors.map(c => h('span', { style: { marginRight: '10px', whiteSpace: 'nowrap' } }, dot(c), c))) : null,
-      f.stones.length ? h('span', { style: { whiteSpace: 'nowrap' } }, `宜戴 ${f.stones.join('、')}`) : null,
-      f.avoid?.length ? h('span.sub', { style: { marginLeft: '10px', whiteSpace: 'nowrap' } }, `忌 ${f.avoid.join('、')}`) : null),
-    line ? h('div', { style: { fontSize: '13px', marginTop: '4px' } }, line) : null,
-    f.summary ? h('div.sub.small', { style: { marginTop: '2px' } }, f.summary) : null,
-    f.baziLine ? h('div.tiny.sub', { style: { marginTop: '6px', lineHeight: 1.6 } }, f.baziLine) : null,
+      calc ? `今日运势 · ${f.today}` : '今日运势 · 来自截图 / 手动'), actions),
+    h('div', { style: { display: 'grid', gridTemplateColumns: `repeat(${Math.max(2, cells.length)}, 1fr)`, gap: '8px', marginTop: '14px' } }, cells),
+    adv ? h('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '16px' } },
+      h('div', h('div.tiny.sub', '建议'), h('div', { style: { fontSize: '14px', marginTop: '3px' } }, adv.suggest || '—')),
+      h('div', h('div.tiny.sub', '避免'), h('div', { style: { fontSize: '14px', marginTop: '3px' } }, adv.avoid || '—'))) : null,
+    f.summary ? h('div.tiny.sub', { style: { marginTop: '14px', lineHeight: 1.6 } }, f.summary) : null,
+    f.baziLine ? h('div.tiny.sub', { style: { lineHeight: 1.6 } }, f.baziLine) : null,
     f.astroLine ? h('div.tiny.sub', { style: { lineHeight: 1.6 } }, f.astroLine) : null,
     backToCalc,
     calc && !settings.birth.date ? h('button.link.sm.sub', { style: { paddingBottom: 0 }, onclick: () => show('settings') }, '填出生信息，按你的八字和星盘来算') : null);
@@ -352,6 +369,7 @@ function fortuneSheet(f, fresh = false) {
       colors: colors.get(), avoid: avoid.get().filter(c => !colors.get().includes(c)),
       stones: stones.value.split(/[、,，\s]+/).map(x => x.trim()).filter(Boolean).slice(0, 4),
       summary: summary.value.trim(), colorText: f?.colorText ?? [], source: 'manual',
+      suggest: f?.suggest ?? '', avoidDo: f?.avoidDo ?? '',
     };
     close();
     await store.setFortune(today(), nf.colors.length || nf.stones.length ? nf : null);

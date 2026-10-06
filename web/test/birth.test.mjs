@@ -71,21 +71,20 @@ test('daily fortune from a full profile', () => {
   assert.equal(f.source, 'calc');
   assert.match(f.baziLine, /庚午 辛巳 乙酉 庚辰/);
   assert.match(f.astroLine, /太阳金牛/);
-  assert.equal(f.colors.length, 2);
-  assert.notEqual(f.colors[0], f.colors[1]);
-  assert.ok(f.avoid.every(c => !f.colors.includes(c)));
-  assert.equal(f.stones.length, 2);
+  assert.equal(f.colors.length, 1);
+  assert.equal(f.stones.length, 1);
+  assert.ok(['水', '木'].includes(f.element));   // must be one of the favourable elements (喜水木)
   assert.deepEqual(computeDaily('2026-10-06', p, libs, 'Asia/Shanghai'), f); // stable within a day
   // No birth time: still works, hour pillar and ascendant left out.
   const g = computeDaily('2026-10-06', { ...p, time: '' }, libs, 'Asia/Shanghai');
   assert.match(g.baziLine, /缺时柱/); assert.ok(!/上升/.test(g.astroLine));
-  // A year of days never crashes, yields 1–2 colours, and the pair changes over time.
+  // A year of days: one colour from a favourable element each day, and it changes over time.
   const seen = new Set();
   for (let i = 0; i < 365; i += 3) {
     const d = new Date(Date.UTC(2026, 0, 1 + i)).toISOString().slice(0, 10);
     const x = computeDaily(d, p, libs, 'Asia/Shanghai');
-    assert.ok(x.colors.length >= 1 && x.colors.length <= 2 && x.avoid.every(c => !x.colors.includes(c)), d);
-    seen.add(x.colors.join());
+    assert.ok(x.colors.length === 1 && x.stones.length === 1 && ['水', '木'].includes(x.element), d);
+    seen.add(x.colors[0]);
   }
-  assert.ok(seen.size > 3, `colours vary across the year: ${seen.size} combinations`);
+  assert.ok(seen.size >= 3, `colours vary across the year: ${[...seen]}`);
 });

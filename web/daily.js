@@ -2,7 +2,7 @@
 // natal chart). Libraries are loaded lazily in the browser; tests pass them in directly.
 import { computeFortune, dayPillar, ELEMENT_COLORS, ELEMENT_STONES } from './fortune.js';
 import { cityOf } from './cities.js';
-import { localToUtc, bazi, strength, natal, transits, genOf, SIGNS, SIGN_COLORS, harmonious } from './birth.js';
+import { localToUtc, bazi, strength, natal, transits, genOf, ctrlOf, SIGNS, SIGN_COLORS, harmonious } from './birth.js';
 
 const BRANCHES = '子丑寅卯辰巳午未申酉戌亥';
 /** Rotate a list by the day number so repeated elements still give a different colour each day. */
@@ -56,12 +56,6 @@ export function computeDaily(today, profile, libs, tz = Intl.DateTimeFormat().re
   const day = dayPillar(today);
   const D = day.element;
 
-  // 八字: favourable elements, the one today's element is or feeds goes first.
-  const rank = e => (e === D ? 0 : e === genOf(D) ? 1 : 2);
-  const top = st.favorable.slice().sort((a, b) => rank(a) - rank(b)).slice(0, 2);
-  const baziColors = [...new Set(top.flatMap(e => ELEMENT_COLORS[e]))];
-  const avoidColors = ELEMENT_COLORS[st.avoid];
-
   // 星盘: today's Moon against the ascendant (or Sun without a birth time).
   const tr = transits(libs.A, localToUtc(today, '12:00', tz));
   const keyIdx = nat.asc ?? nat.sun;
@@ -69,30 +63,26 @@ export function computeDaily(today, profile, libs, tz = Intl.DateTimeFormat().re
   const ok = harmonious(tr.moon, keyIdx);
   const astroColors = ok ? SIGN_COLORS[tr.moon] : SIGN_COLORS[nat.venus];
   const astroWhy = ok ? `今日月亮在${SIGNS[tr.moon]}，和你的${keyName}合拍`
-    : `今日月亮在${SIGNS[tr.moon]}，和你的${keyName}不太合拍，穿你的金星${SIGNS[nat.venus]}色稳住`;
+    : `今日月亮在${SIGNS[tr.moon]}，和你的${keyName}不太合拍`;
 
-  // Two colours a day: a main one (agreed by both systems if possible, else from the top favourable element)
-  // and an accent (today's chart colour or the second favourable element). Lists rotate by day so the
-  // pick within an element changes from day to day.
-  const both = baziColors.filter(c => astroColors.includes(c));
-  const main = rotate(both.length ? both : ELEMENT_COLORS[top[0]], today)[0];
-  const accent = [...rotate(astroColors, today), ...rotate(ELEMENT_COLORS[top[1] ?? top[0]], today)]
-    .find(c => c !== main && !avoidColors.includes(c));
-  const colors = accent ? [main, accent] : [main];
-  const avoid = avoidColors.filter(c => !colors.includes(c));
-  const pool = ELEMENT_STONES[top[0]];
-  const k = BRANCHES.indexOf(day.branch) % pool.length;
+  // Like 测测: one lucky element a day, and everything else follows from it.
+  // Among the favourable elements, the one today's pillar strengthens most wins (same element 3, today feeds
+  // it 2, neutral 1, it feeds today 0, today controls it -1); the chart breaks ties.
+  const boost = e => (e === D ? 3 : genOf(D) === e ? 2 : genOf(e) === D ? 0 : ctrlOf(D) === e ? -1 : 1);
+  const chartHit = e => (ELEMENT_COLORS[e].some(c => astroColors.includes(c)) ? 0.5 : 0);
+  const lucky = st.favorable.slice().sort((a, b) => (boost(b) + chartHit(b)) - (boost(a) + chartHit(a)))[0];
+  const agreed = ELEMENT_COLORS[lucky].filter(c => astroColors.includes(c));
+  const color = rotate(agreed.length ? agreed : ELEMENT_COLORS[lucky], today)[0];
+  const stone = rotate(ELEMENT_STONES[lucky], today)[0];
 
   const pillars = bz.pillars.map(p => p.name).join(' ');
   return {
-    source: 'calc', colors, avoid,
-    stones: [pool[k], pool[(k + 1) % pool.length]],
+    source: 'calc', colors: [color], avoid: [], stones: [stone],
     today: `${day.name}日 · ${D}`,
     master: `${bz.master}${bz.masterEl}`,
-    elements: top, avoidElement: st.avoid,
+    element: lucky, elements: [lucky],
     baziLine: `八字 ${pillars}${hasTime ? '' : '（缺时柱）'} · ${bz.master}${bz.masterEl}日主${st.level} · 喜${st.favorable.join('')} · 忌${st.avoid}`,
     astroLine: `星盘 太阳${SIGNS[nat.sun]} · 月亮${SIGNS[nat.moon]}${nat.moonUncertain ? '?' : ''}${nat.asc != null ? ' · 上升' + SIGNS[nat.asc] : ''}`,
-    summary: `${top.includes(D) ? `今日${D}正是你的喜用` : `今日${D}，宜补${top.join('、')}`}；${astroWhy}`,
-    agree: both,
+    summary: `今日幸运五行：${lucky}${lucky === D ? '（正逢今日）' : ''}；${astroWhy}`,
   };
 }

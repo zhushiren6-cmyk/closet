@@ -188,7 +188,11 @@ test('swapping the only lucky piece keeps the lucky colour', () => {
 });
 
 test('parses fortune screenshots and rejects non-fortunes', () => {
-  const f = parseFortune('```json\n{"colorText":["薄荷绿","奶白"],"colors":["绿","白","花色"],"avoid":["黑","绿"],"stones":["粉晶"],"summary":"宜出门见朋友"}\n```');
+  const f = parseFortune('```json\n{"colorText":["薄荷绿","奶白"],"colors":["绿","白","花色"],"avoid":["黑","绿"],"stones":["粉晶"],"summary":"宜出门见朋友","suggest":"约朋友、晒心情","avoidDo":"不走心、客套"}\n```');
+  assert.equal(f.suggest, '约朋友、晒心情'); assert.equal(f.avoidDo, '不走心、客套');
+  // The real 测测 layout: 幸运色 棕色, 幸运配饰 黄水晶.
+  const cc = parseFortune('{"colorText":["棕色"],"colors":["棕"],"avoid":[],"stones":["黄水晶"],"summary":"适合敞开心扉","suggest":"约朋友、晒心情","avoidDo":"不走心、客套"}');
+  assert.deepEqual(cc.colors, ['棕']); assert.deepEqual(cc.stones, ['黄水晶']);
   assert.deepEqual(f.colors, ['绿', '白']);
   assert.deepEqual(f.avoid, ['黑']);
   assert.deepEqual(f.stones, ['粉晶']);
@@ -219,24 +223,21 @@ test('day pillars match the lunar-javascript calendar', () => {
 test('computed fortune: with and without a birthday', () => {
   const f = computeFortune('2026-10-06', '1990-05-20'); // 癸丑(水) day, 乙(木) day master: 水生木
   assert.equal(f.master, '乙木');
-  assert.deepEqual(f.elements, ['木', '水']);
-  assert.equal(f.colors.length, 2);
-  assert.equal(f.colors[0], '绿');                                   // 木 has a single colour
-  assert.ok(['黑', '藏青', '蓝', '牛仔蓝'].includes(f.colors[1]));   // one of 水's colours
-  assert.deepEqual(f.avoid, ['白', '灰']); // 金克木
-  assert.equal(f.stones.length, 2);
+  assert.deepEqual(f.elements, ['木']);             // one lucky element a day, like 测测
+  assert.deepEqual(f.colors, ['绿']);
+  assert.equal(f.stones.length, 1);
   assert.match(f.summary, /水生你的木/);
   const g = computeFortune('2026-10-06');
   assert.equal(g.master, null);
-  assert.deepEqual(g.elements, ['金', '水']);
-  assert.ok(!g.colors.some(c => g.avoid.includes(c)));
+  assert.deepEqual(g.elements, ['金']);
+  assert.ok(['白', '灰'].includes(g.colors[0]));
   // Deterministic: same inputs, same answer.
   assert.deepEqual(computeFortune('2026-10-06', '1990-05-20'), f);
   // Every day of a year yields usable colours and stones.
   for (let i = 0; i < 365; i++) {
     const d = new Date(Date.UTC(2026, 0, 1 + i)).toISOString().slice(0, 10);
     const x = computeFortune(d, '1995-11-02');
-    assert.ok(x.colors.length === 2 && x.colors[0] !== x.colors[1] && x.stones.length === 2 && x.avoid.every(c => !x.colors.includes(c)), d);
+    assert.ok(x.colors.length === 1 && x.stones.length === 1, d);
   }
 });
 

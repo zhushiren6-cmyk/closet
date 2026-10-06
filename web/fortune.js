@@ -73,19 +73,13 @@ export function computeFortune(today, birthday = '') {
     avoidEl = ctrlBy(D);
     why = `今日属${D}，${first}生${D}`;
   }
-  // Two colours: one from each element, rotating by day within the element.
+  // Like 测测: one lucky element (the first), one colour and one stone from it, rotating by day.
   const day = Math.floor(Date.UTC(...today.split('-').map((x, i) => (i === 1 ? x - 1 : +x))) / 86400000);
-  const pick = (el, skip) => { const l = ELEMENT_COLORS[el].filter(c => c !== skip); return l[day % l.length]; };
-  const main = pick(first);
-  const colors = [main, pick(second, main)];
-  const avoid = ELEMENT_COLORS[avoidEl].filter(c => !colors.includes(c));
-  // Rotate the stone list by the day's branch so the suggestion changes within an element's run.
-  const pool = ELEMENT_STONES[first];
-  const k = BRANCHES.indexOf(t.branch) % pool.length;
-  const stones = [pool[k], pool[(k + 1) % pool.length]];
+  const colors = [ELEMENT_COLORS[first][day % ELEMENT_COLORS[first].length]];
+  const stones = [ELEMENT_STONES[first][day % ELEMENT_STONES[first].length]];
   return {
-    source: 'calc', colors, avoid, stones,
-    summary: `${why}；宜${first}、${second}色`,
-    today: `${t.name}日 · ${D}`, master, elements: [first, second], avoidElement: avoidEl,
+    source: 'calc', colors, avoid: [], stones,
+    summary: `${why}；今日幸运五行：${first}`,
+    today: `${t.name}日 · ${D}`, master, element: first, elements: [first],
   };
 }

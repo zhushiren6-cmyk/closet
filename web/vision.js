@@ -182,14 +182,16 @@ export async function testConnection(s) {
 
 // ---------------- daily fortune (e.g. a 测测 screenshot) ----------------
 
-export const FORTUNE_PROMPT = `用户发来一张运势类 App（例如测测）的今日运势截图。请提取和穿搭有关的信息：
+export const FORTUNE_PROMPT = `用户发来一张运势类 App（例如测测）的今日运势截图。测测的运势页通常有「幸运色」「幸运配饰」「幸运时辰」等格子，以及「建议」「避免」两栏。请提取：
 - colorText：截图里写的幸运色原文，数组，例如 ["薄荷绿","米白"]
 - colors：把幸运色对应到这些标准色之一：黑、白、灰、米、卡其、驼、棕、藏青、牛仔蓝、蓝、绿、红、粉、黄、橙、紫，数组
 - avoid：截图里明确说不宜、忌讳的颜色，同样对应到标准色，数组，没有就 []
 - stones：推荐佩戴的饰品、水晶、宝石或材质原文，数组，例如 ["粉晶","黄金"]，没有就 []
-- summary：用一句话（20 字以内）概括截图里和穿搭、出门有关的建议，没有就空字符串
+- summary：用一句话（20 字以内）概括截图里的今日运势，没有就空字符串
+- suggest：「建议」栏原文，例如“约朋友、晒心情”，没有就空字符串
+- avoidDo：「避免」栏原文，例如“不走心、客套”，没有就空字符串
 只输出一个 JSON 对象，不要代码围栏，不要任何解释：
-{"colorText":[],"colors":[],"avoid":[],"stones":[],"summary":""}
+{"colorText":[],"colors":[],"avoid":[],"stones":[],"summary":"","suggest":"","avoidDo":""}
 如果这不是运势截图，输出 {"ok":false,"note":"原因"}`;
 
 const STD = COLOR_NAMES.filter(c => c !== '花色');
@@ -210,8 +212,10 @@ export function parseFortune(content) {
   const avoid = toStd(obj.avoid).filter(c => !colors.includes(c));
   const stones = (Array.isArray(obj.stones) ? obj.stones : []).map(x => String(x).trim()).filter(Boolean).slice(0, 4);
   const summary = String(obj.summary ?? '').trim().slice(0, 40);
+  const suggest = String(obj.suggest ?? '').trim().slice(0, 20);
+  const avoidDo = String(obj.avoidDo ?? '').trim().slice(0, 20);
   if (!colors.length && !stones.length) throw new VisionError('没从截图里读到幸运色或推荐饰品，可以换一张更完整的截图，或手动填写。', text.slice(0, 600));
-  return { colors, colorText, avoid, stones, summary };
+  return { colors, colorText, avoid, stones, summary, suggest, avoidDo };
 }
 
 export async function recognizeFortune(s, jpegDataUrl) {
