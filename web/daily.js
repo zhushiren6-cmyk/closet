@@ -5,6 +5,13 @@ import { cityOf } from './cities.js';
 import { localToUtc, bazi, strength, natal, transits, genOf, SIGNS, SIGN_COLORS, harmonious } from './birth.js';
 
 const BRANCHES = '子丑寅卯辰巳午未申酉戌亥';
+/** Rotate a list by the day number so repeated elements still give a different colour each day. */
+export function rotate(list, today) {
+  if (!list.length) return list;
+  const [y, m, d] = today.split('-').map(Number);
+  const k = Math.floor(Date.UTC(y, m - 1, d) / 86400000) % list.length;
+  return [...list.slice(k), ...list.slice(0, k)];
+}
 
 let libsP = null;
 /** Browser only: lunar-javascript is a UMD script (adds window.Solar), astronomy-engine is an ES module. */
@@ -64,9 +71,14 @@ export function computeDaily(today, profile, libs, tz = Intl.DateTimeFormat().re
   const astroWhy = ok ? `今日月亮在${SIGNS[tr.moon]}，和你的${keyName}合拍`
     : `今日月亮在${SIGNS[tr.moon]}，和你的${keyName}不太合拍，穿你的金星${SIGNS[nat.venus]}色稳住`;
 
-  // Colours both systems agree on lead; cap the list so it stays readable.
+  // Two colours a day: a main one (agreed by both systems if possible, else from the top favourable element)
+  // and an accent (today's chart colour or the second favourable element). Lists rotate by day so the
+  // pick within an element changes from day to day.
   const both = baziColors.filter(c => astroColors.includes(c));
-  const colors = [...new Set([...both, ...baziColors, ...astroColors])].slice(0, 6);
+  const main = rotate(both.length ? both : ELEMENT_COLORS[top[0]], today)[0];
+  const accent = [...rotate(astroColors, today), ...rotate(ELEMENT_COLORS[top[1] ?? top[0]], today)]
+    .find(c => c !== main && !avoidColors.includes(c));
+  const colors = accent ? [main, accent] : [main];
   const avoid = avoidColors.filter(c => !colors.includes(c));
   const pool = ELEMENT_STONES[top[0]];
   const k = BRANCHES.indexOf(day.branch) % pool.length;

@@ -73,7 +73,11 @@ export function computeFortune(today, birthday = '') {
     avoidEl = ctrlBy(D);
     why = `今日属${D}，${first}生${D}`;
   }
-  const colors = [...new Set([...ELEMENT_COLORS[first], ...ELEMENT_COLORS[second]])];
+  // Two colours: one from each element, rotating by day within the element.
+  const day = Math.floor(Date.UTC(...today.split('-').map((x, i) => (i === 1 ? x - 1 : +x))) / 86400000);
+  const pick = (el, skip) => { const l = ELEMENT_COLORS[el].filter(c => c !== skip); return l[day % l.length]; };
+  const main = pick(first);
+  const colors = [main, pick(second, main)];
   const avoid = ELEMENT_COLORS[avoidEl].filter(c => !colors.includes(c));
   // Rotate the stone list by the day's branch so the suggestion changes within an element's run.
   const pool = ELEMENT_STONES[first];

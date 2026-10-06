@@ -220,7 +220,9 @@ test('computed fortune: with and without a birthday', () => {
   const f = computeFortune('2026-10-06', '1990-05-20'); // 癸丑(水) day, 乙(木) day master: 水生木
   assert.equal(f.master, '乙木');
   assert.deepEqual(f.elements, ['木', '水']);
-  assert.deepEqual(f.colors, ['绿', '黑', '藏青', '蓝', '牛仔蓝']);
+  assert.equal(f.colors.length, 2);
+  assert.equal(f.colors[0], '绿');                                   // 木 has a single colour
+  assert.ok(['黑', '藏青', '蓝', '牛仔蓝'].includes(f.colors[1]));   // one of 水's colours
   assert.deepEqual(f.avoid, ['白', '灰']); // 金克木
   assert.equal(f.stones.length, 2);
   assert.match(f.summary, /水生你的木/);
@@ -234,7 +236,7 @@ test('computed fortune: with and without a birthday', () => {
   for (let i = 0; i < 365; i++) {
     const d = new Date(Date.UTC(2026, 0, 1 + i)).toISOString().slice(0, 10);
     const x = computeFortune(d, '1995-11-02');
-    assert.ok(x.colors.length >= 2 && x.stones.length === 2 && x.avoid.every(c => !x.colors.includes(c)), d);
+    assert.ok(x.colors.length === 2 && x.colors[0] !== x.colors[1] && x.stones.length === 2 && x.avoid.every(c => !x.colors.includes(c)), d);
   }
 });
 
