@@ -203,3 +203,62 @@ test('jewellery keywords map to 首饰', () => {
   for (const s of ['粉晶手链', '珍珠耳钉', '黄金项链', '银戒指', '首饰']) assert.equal(normalizeCat(s), Cat.JEWEL, s);
   assert.equal(normalizeCat('渔夫帽'), Cat.ACC);
 });
+
+// ---------------- computed fortune & accessories ----------------
+import { dayPillar, computeFortune } from '../fortune.js';
+import { pickAccessories, accKind } from '../engine.js';
+
+test('day pillars match the lunar-javascript calendar', () => {
+  // Reference values from lunar-javascript (Solar.fromYmd(...).getLunar().getDayInGanZhi()).
+  for (const [d, gz] of [['2026-10-06', '癸丑'], ['2026-10-07', '甲寅'], ['2000-01-01', '戊午'], ['1990-05-20', '乙酉'], ['1900-01-01', '甲戌']]) {
+    assert.equal(dayPillar(d).name, gz, d);
+  }
+  assert.equal(dayPillar('2026-10-06').element, '水');
+});
+
+test('computed fortune: with and without a birthday', () => {
+  const f = computeFortune('2026-10-06', '1990-05-20'); // 癸丑(水) day, 乙(木) day master: 水生木
+  assert.equal(f.master, '乙木');
+  assert.deepEqual(f.elements, ['木', '水']);
+  assert.deepEqual(f.colors, ['绿', '黑', '藏青', '蓝', '牛仔蓝']);
+  assert.deepEqual(f.avoid, ['白', '灰']); // 金克木
+  assert.equal(f.stones.length, 2);
+  assert.match(f.summary, /水生你的木/);
+  const g = computeFortune('2026-10-06');
+  assert.equal(g.master, null);
+  assert.deepEqual(g.elements, ['金', '水']);
+  assert.ok(!g.colors.some(c => g.avoid.includes(c)));
+  // Deterministic: same inputs, same answer.
+  assert.deepEqual(computeFortune('2026-10-06', '1990-05-20'), f);
+  // Every day of a year yields usable colours and stones.
+  for (let i = 0; i < 365; i++) {
+    const d = new Date(Date.UTC(2026, 0, 1 + i)).toISOString().slice(0, 10);
+    const x = computeFortune(d, '1995-11-02');
+    assert.ok(x.colors.length >= 2 && x.stones.length === 2 && x.avoid.every(c => !x.colors.includes(c)), d);
+  }
+});
+
+test('accessories: cold gets scarf/hat, hot gets sunglasses, never two of the same part', () => {
+  const accs = [item(Cat.ACC, '灰', 2, [], '灰色羊绒围巾'), item(Cat.ACC, '黑', 2, [], '黑色针织帽'),
+    item(Cat.ACC, '黑', 2, [], '黑色墨镜'), item(Cat.ACC, '棕', 2, [], '棕色皮腰带'), item(Cat.ACC, '米', 2, [], '米色围巾')];
+  assert.equal(accKind(accs[0]).kind, 'cold'); assert.equal(accKind(accs[2]).kind, 'sun'); assert.equal(accKind(accs[3]).kind, 'other');
+  for (let s = 0; s < 100; s++) {
+    const cold = pickAccessories(accs, 'COLD', null, () => 1, seeded(s)).pieces;
+    assert.equal(cold.length, 2);
+    assert.ok(cold.every(p => accKind(p).kind === 'cold'));
+    assert.notEqual(accKind(cold[0]).part, accKind(cold[1]).part);
+    const hot = pickAccessories(accs, 'HOT', null, () => 1, seeded(s)).pieces;
+    assert.ok(hot.some(p => p.name === '黑色墨镜') && !hot.some(p => accKind(p).kind === 'cold'));
+    assert.ok(hot.length <= 2);
+  }
+  // A lucky-coloured accessory always comes along.
+  const lucky = pickAccessories(accs, 'WARM', { colors: ['棕'] }, () => 1, seeded(7)).pieces;
+  assert.deepEqual(lucky.map(p => p.name), ['棕色皮腰带']);
+  // Whole outfit in the cold includes accessories.
+  const ws = [...basic, ...accs];
+  const o = ok(new OutfitEngine(ws, {}, today, seeded(3)).generate('COLD', '日常'));
+  assert.ok(o.pieces.filter(p => p.cat === Cat.ACC).length === 2);
+  const i = o.pieces.findIndex(p => p.cat === Cat.ACC);
+  const sw = new OutfitEngine(ws, {}, today, seeded(4)).swap(o, i, 'COLD', '日常');
+  assert.ok(!sw || accKind(sw.pieces[i]).kind === 'cold');
+});

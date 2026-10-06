@@ -97,6 +97,54 @@ export function stoneMatch(item, stone) {
   return text.includes(k) || (k.length >= 2 && k.endsWith('晶') && text.includes(k.slice(0, -1) + '晶'));
 }
 
+/** Accessory kind by name: cold-weather (围巾/手套/毛线帽…), sun (墨镜/遮阳帽…), or other (腰带/发饰…). */
+const COLD_KEYS = [['围巾', '披肩', '围脖'], ['毛线帽', '针织帽', '贝雷帽', '毛毡帽', '护耳帽', '耳罩'], ['手套']];
+const SUN_KEYS = ['墨镜', '太阳镜', '遮阳帽', '草帽', '渔夫帽', '防晒'];
+export function accKind(it) {
+  const n = `${it.name ?? ''}`;
+  for (let i = 0; i < COLD_KEYS.length; i++) if (COLD_KEYS[i].some(k => n.includes(k))) return { kind: 'cold', part: i };
+  if (SUN_KEYS.some(k => n.includes(k))) return { kind: 'sun', part: 9 };
+  return { kind: 'other', part: 10 };
+}
+
+/**
+ * Accessories (配饰) for the outfit: cold days get scarf/hat/gloves, hot days sunglasses or a sun hat,
+ * otherwise an occasional belt/hair piece. Lucky colours are preferred, avoid colours nearly never. Max 2.
+ */
+export function pickAccessories(items, w, fortune, recency = () => 1, rnd = Math.random) {
+  const accs = items.filter(i => i.cat === Cat.ACC);
+  if (!accs.length) return { pieces: [], reasons: [] };
+  const lucky = new Set(fortune?.colors ?? []), bad = new Set(fortune?.avoid ?? []);
+  const wt = it => recency(it.id) * (lucky.has(it.color) ? 3 : 1) * (bad.has(it.color) ? 0.1 : 1);
+  const draw = list => {
+    const total = list.reduce((a, it) => a + wt(it), 0);
+    let r = rnd() * total;
+    for (const it of list) { r -= wt(it); if (r <= 0) return it; }
+    return list[list.length - 1];
+  };
+  const out = [], reasons = [];
+  const usedParts = new Set();
+  const take = (list, why) => {
+    const cand = list.filter(it => !out.includes(it) && !usedParts.has(accKind(it).part));
+    if (!cand.length || out.length >= 2) return;
+    const it = draw(cand);
+    out.push(it); usedParts.add(accKind(it).part);
+    reasons.push(why(it));
+  };
+  const cold = accs.filter(i => accKind(i).kind === 'cold');
+  const sun = accs.filter(i => accKind(i).kind === 'sun');
+  const other = accs.filter(i => accKind(i).kind === 'other');
+  if (w === 'COLD') { take(cold, it => `天冷，加上「${it.name}」`); take(cold, it => `再加「${it.name}」更暖`); }
+  else if (w === 'COOL' && rnd() < 0.4) take(cold.filter(i => accKind(i).part === 0), it => `早晚凉，围上「${it.name}」`);
+  else if (w === 'HOT') take(sun, it => `太阳大，带上「${it.name}」`);
+  const luckyOther = other.filter(i => lucky.has(i.color));
+  if (out.length < 2 && (luckyOther.length || rnd() < 0.35)) {
+    take(luckyOther.length ? luckyOther : other,
+      it => (lucky.has(it.color) ? `「${it.name}」是今天的幸运色` : `配一件「${it.name}」`));
+  }
+  return { pieces: out, reasons };
+}
+
 /**
  * Jewellery for the day, driven by the fortune: one piece per recommended stone/material (max 2);
  * if nothing matches a stone, one piece in a lucky colour. No fortune, no jewellery.
@@ -255,8 +303,9 @@ export class OutfitEngine {
     if (!best) return { missing: '这次没搭出来，再点一次试试' };
     const pieces = best.map(([it]) => it);
     const jewel = pickJewelry(this.items, fortune, id => this.recency(id), this.rnd);
-    const all = [...pieces, ...jewel.pieces];
-    return { pieces: all, reasons: [...this.reasons(all, w, occ, [tops, bottoms, dresses].filter(Boolean)), ...jewel.reasons] };
+    const acc = pickAccessories(this.items, w, fortune, id => this.recency(id), this.rnd);
+    const all = [...pieces, ...acc.pieces, ...jewel.pieces];
+    return { pieces: all, reasons: [...this.reasons(all, w, occ, [tops, bottoms, dresses].filter(Boolean)), ...acc.reasons, ...jewel.reasons] };
   }
 
   /** Replace the piece at [index] with another of the same category; null when there is nothing else. */
@@ -264,6 +313,14 @@ export class OutfitEngine {
     this.fortune = fortune;
     const cur = outfit.pieces[index];
     if (!cur) return null;
+    if (cur.cat === Cat.ACC) {
+      const kind = accKind(cur).kind;
+      const list = this.items.filter(i => i.cat === Cat.ACC && i.id !== cur.id && !outfit.pieces.includes(i) && accKind(i).kind === kind);
+      if (!list.length) return null;
+      const pieces = outfit.pieces.slice();
+      pieces[index] = list[Math.floor(this.rnd() * list.length)];
+      return { pieces, reasons: outfit.reasons };
+    }
     if (cur.cat === Cat.JEWEL) {
       const others = this.items.filter(i => i.cat === Cat.JEWEL && i.id !== cur.id && !outfit.pieces.includes(i));
       const lucky = new Set(fortune?.colors ?? []);
@@ -305,8 +362,9 @@ export class OutfitEngine {
     const lucky = this.fortune?.colors ?? [];
     if (lucky.length) {
       const carrier = pieces.find(p => LUCKY_SLOTS.has(p.cat) && lucky.includes(p.color));
-      out.unshift(carrier ? `今天幸运色是${lucky.join('、')}，「${carrier.name}」呼应了它`
-        : `今天幸运色是${lucky.join('、')}，衣橱里还没有能穿的这个颜色`);
+      const shortList = lucky.length > 3 ? `${lucky.slice(0, 3).join('、')}等` : lucky.join('、');
+      out.unshift(carrier ? `「${carrier.name}」带上了今天的幸运色${carrier.color}`
+        : `今天幸运色是${shortList}，衣橱里还没有能穿的这个颜色`);
     }
     let notes = 0;
     for (const p of pieces) {
