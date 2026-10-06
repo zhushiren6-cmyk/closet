@@ -4,8 +4,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import * as A from '../vendor/astronomy.js';
-import { localToUtc, equationOfTime, trueSolarFields, bazi, strength, natal, ascendant, harmonious, SIGNS } from '../birth.js';
-import { computeDaily } from '../daily.js';
+import { localToUtc, equationOfTime, trueSolarFields, bazi, strength, daYun, natal, ascendant, harmonious, SIGNS } from '../birth.js';
+import { computeDaily, themeOf } from '../daily.js';
 const lunar = createRequire(import.meta.url)('../vendor/lunar.js');
 
 test('wall clock -> UTC, including China 1986-1991 DST', () => {
@@ -116,4 +116,32 @@ test('a county birth place drives true solar time', () => {
   const ks = computeDaily('2026-10-06', { date: '1995-11-02', time: '10:30', place: { name: '新疆 喀什市', lon: 75.99, lat: 39.47, tz: 'Asia/Shanghai' } }, libs, 'Asia/Shanghai');
   assert.match(bj.baziLine, /巳 ·/);
   assert.match(ks.baziLine, /辰 ·/);
+});
+
+test('大运: 阳男阴女顺排, decade for the year, feeds into strength', () => {
+  const ms = localToUtc('1995-11-02', '10:30', 'Asia/Shanghai');
+  const bz = bazi(lunar, ms, 116.41, true); // 乙亥年 丙戌月: 阴年 -> 男逆女顺
+  assert.equal(bz.pillars[1].name, '丙戌');
+  const m = daYun(bz, 'male', 2026), w = daYun(bz, 'female', 2026);
+  assert.equal(m.forward, false); assert.equal(w.forward, true);
+  assert.equal(m.name, '癸未'); // 乙酉 甲申 癸未 ... (reverse from 丙戌)
+  assert.equal(w.name, '己丑'); // 丁亥 戊子 己丑 ... (forward from 丙戌)
+  assert.equal(daYun(bz, '', 2026), null);
+  assert.equal(daYun(bz, 'male', 1996).name, ''); // before the first decade starts
+  // A luck pillar adds one stem + one main qi; with no gender nothing changes.
+  assert.deepEqual(strength(bz, null), strength(bz));
+  assert.notEqual(strength(bz, m).score, strength(bz).score);
+});
+
+test('computeDaily: gender adds 大运 to the line; theme follows the lucky element', () => {
+  const base = { date: '1995-11-02', time: '10:30', place: { name: '北京市 东城区', lon: 116.416, lat: 39.928, tz: 'Asia/Shanghai' } };
+  const libs = { lunar, A };
+  const n = computeDaily('2026-10-06', base, libs, 'Asia/Shanghai');
+  const m = computeDaily('2026-10-06', { ...base, gender: 'male' }, libs, 'Asia/Shanghai');
+  assert.ok(!n.baziLine.includes('大运'));
+  assert.match(m.baziLine, /大运癸未/);
+  assert.equal(m.gender, 'male');
+  assert.deepEqual(m.theme, themeOf('火', m.element));
+  assert.equal(themeOf('火', '火').god, '比劫'); assert.equal(themeOf('火', '木').god, '印星');
+  assert.equal(themeOf('火', '土').god, '食伤'); assert.equal(themeOf('火', '金').god, '财星'); assert.equal(themeOf('火', '水').god, '官杀');
 });

@@ -3,7 +3,7 @@ import {
 } from './engine.js';
 import { PROVIDERS, providerOf, missingOf, modelOf, recognize, recognizeFortune, testConnection, chat, VisionError } from './vision.js';
 import { computeFortune } from './fortune.js';
-import { computeDaily, loadLibs } from './daily.js';
+import { computeDaily, loadLibs, themeOf } from './daily.js';
 import { CITIES, cityOf } from './cities.js';
 import { store, imageUrl, putImage, revoke, exportBackup, importBackup, sweepImages } from './db.js';
 import { decode, toDataUrl, toBlob, crop } from './images.js';
@@ -53,6 +53,7 @@ const settings = (() => {
   s.autoFortune ??= true;
   // Birth profile; older versions only stored a birthday.
   s.birth ??= { date: s.birthday ?? '', time: '', city: '北京' };
+  s.birth.gender ??= '';
   delete s.birthday;
   if (!OCCASIONS.includes(s.occasion)) s.occasion = '日常';
   s.save = () => { try { localStorage.setItem(KEY, JSON.stringify({ ...s, save: undefined })); } catch { /* private mode */ } };
@@ -161,11 +162,12 @@ document.querySelectorAll('nav.tabs-bottom button').forEach(b => b.addEventListe
 // =============================== 今天 ===============================
 
 let outfit = null; // { pieces, reasons }
+let outfitDay = today(); // the app can stay open past midnight
 const engine = () => new OutfitEngine(store.items, store.lastWorn(), today());
 
 function regenerate() {
   const avoid = new Set(outfit?.pieces.map(p => p.id) ?? []);
-  const r = engine().generate(settings.weather, settings.occasion, avoid, todayFortune());
+  const r = engine().generate(settings.weather, settings.occasion, avoid, fortuneForOutfit());
   outfit = r.missing ? null : r;
   renderToday(r.missing);
 }
@@ -190,8 +192,9 @@ const RATIO = { [Cat.DRESS]: 1.45, [Cat.OUTER]: 1.25, [Cat.BOTTOM]: 1.0, [Cat.TO
 const ORDER = [Cat.OUTER, Cat.DRESS, Cat.TOP, Cat.BOTTOM, Cat.SHOES, Cat.BAG, Cat.JEWEL, Cat.ACC];
 
 function renderToday(missing) {
+  if (outfitDay !== today()) { outfitDay = today(); outfit = null; }
   if (!missing && !outfit && !syncOutfit()) {
-    const r = engine().generate(settings.weather, settings.occasion, new Set(), todayFortune());
+    const r = engine().generate(settings.weather, settings.occasion, new Set(), fortuneForOutfit());
     if (r.missing) missing = r.missing; else outfit = r;
   }
   const d = new Date();
@@ -250,32 +253,58 @@ const dot = c => h('i', { style: { display: 'inline-block', width: '10px', heigh
 
 /** The fortune in effect today: one imported/entered by hand wins, otherwise the computed one (if enabled). */
 let libs = null; // lunar + astronomy, loaded once a birth date is set
+let libsState = 'idle'; // idle | loading | ok | fail
+const PENDING = { pending: true };
+const fortuneForOutfit = () => { const f = todayFortune(); return f?.pending ? null : f; };
+/**
+ * With a birth date the fortune needs the chart libraries. While they load we show 「推算中」 instead of the
+ * day-only rule, which gives a different colour and made the result look random. Only if they fail to load do
+ * we fall back to it, and say so.
+ */
 function todayFortune() {
   const own = store.fortune(today());
   if (own || !settings.autoFortune) return own;
+  if (settings.birth.date && !libs) {
+    if (libsState !== 'fail') { ensureLibs(); return PENDING; }
+    return { ...computeFortune(today(), settings.birth.date), simple: true };
+  }
   try { return computeDaily(today(), settings.birth, libs); }
-  catch { return computeFortune(today(), settings.birth.date); }
+  catch { return { ...computeFortune(today(), settings.birth.date), simple: true }; }
 }
-/** Loads the chart libraries; resolves quickly (max ~4 s) so the page never waits long. */
+/** Starts loading the chart libraries; when they arrive the outfit is redone with the real fortune. */
 function ensureLibs() {
   if (libs || !settings.birth.date) return Promise.resolve();
-  return Promise.race([
-    loadLibs().then(l => { libs = l; }).catch(() => {}),
-    new Promise(r => setTimeout(r, 4000)),
-  ]);
+  if (libsState !== 'loading') {
+    libsState = 'loading';
+    loadLibs().then(l => { libs = l; libsState = 'ok'; })
+      .catch(() => { libsState = 'fail'; })
+      .finally(() => { outfit = null; if (page === 'today') renderToday(); });
+  }
+  // The first screen waits at most ~4 s; past that it shows 「推算中」 and updates itself.
+  return Promise.race([loadLibs().catch(() => {}), new Promise(r => setTimeout(r, 4000))]);
 }
 
 // 「建议 / 避免」 for the computed fortune, written by the model once per day and cached. Never blocks the page.
-const AI_LINE_KEY = 'closet.aiAdvice';
+const AI_LINE_KEY = 'closet.aiAdvice2'; // v2: grounded in the lucky element's theme; old generic lines are dropped
 let aiLineTried = '';
 function aiAdvice(f) {
   const k = `${today()}|${JSON.stringify(settings.birth)}|${f.colors.join()}|${f.stones.join()}`;
   try { const c = JSON.parse(localStorage.getItem(AI_LINE_KEY) || 'null'); if (c?.k === k) return c.v; } catch { /* ignore */ }
   if (aiLineTried === k || missingOf(settings, providerOf(settings.provider))) return null;
   aiLineTried = k;
-  // Only today's result goes out — never the pillars or chart, which would reveal the birth date/time.
-  chat(settings, `今日推算结果：${JSON.stringify({ 今日: f.today, 日主: f.master, 幸运五行: f.element, 幸运色: f.colors, 幸运配饰: f.stones })}`, {
-    system: '你是运势小助手。根据给定的今日推算结果，给出今天的「建议」和「避免」，各是两个 2-4 字的短语，用顿号隔开，例如 建议“约朋友、晒心情”，避免“不走心、客套”。语气轻松，不恐吓、不承诺效果。只输出 JSON：{"suggest":"…","avoid":"…"}，不要其他文字。',
+  // Only today's result (and gender, if set) goes out — never the pillars or chart, which would reveal the birth date/time.
+  const theme = f.theme ?? (f.master && f.element ? themeOf(f.master.slice(-1), f.element) : null);
+  const gender = { male: '男', female: '女' }[settings.birth.gender] ?? '未填';
+  const payload = { 日期: today(), 今日: f.today, 日主: f.master, 幸运五行: f.element, 幸运五行对你是: theme?.god, 主管: theme?.about,
+    幸运色: f.colors, 幸运配饰: f.stones, 性别: gender };
+  chat(settings, `今日推算结果：${JSON.stringify(payload)}`, {
+    system: [
+      '你是运势小助手。根据今日推算结果，写今天的「建议」和「避免」，各两个 2-4 字的短语，用顿号隔开。',
+      '规则：1) 建议必须是具体可做的小事，并且落在「主管」写的那类事情上（例如主管是表达、创作，就写“发条动态、写点东西”）。',
+      '2) 避免是和建议相反的做法（例如建议表达，就避免“憋着不说、敷衍回复”），只写行为，不写颜色、衣服、饰品，不能和幸运色、幸运配饰矛盾。',
+      '3) 性别只用来让措辞自然，不写刻板印象；性别未填就写中性的话。4) 语气轻松，不恐吓、不承诺效果，不要“多喝水、早点睡”这类每天都通用的话。',
+      '只输出 JSON：{"suggest":"…","avoid":"…"}，不要其他文字。',
+    ].join(''),
     maxTokens: 300, timeoutMs: 30000,
   }).then(t => {
     const o = JSON.parse(t.slice(t.indexOf('{'), t.lastIndexOf('}') + 1));
@@ -283,7 +312,7 @@ function aiAdvice(f) {
     if (!v.suggest && !v.avoid) return;
     try { localStorage.setItem(AI_LINE_KEY, JSON.stringify({ k, v })); } catch { /* ignore */ }
     if (page === 'today') renderToday();
-  }).catch(() => { /* no advice today; the computed colour and accessory still stand */ });
+  }).catch(() => { aiLineTried = ''; /* tries again on the next render; the colour and accessory still stand */ });
   return null;
 }
 
@@ -299,9 +328,9 @@ function fortuneRow() {
   const actions = h('div.row', { style: { gap: '18px' } },
     h('button.link.sm', { onclick: importFortune }, '导入测测截图'),
     h('button.link.sm.sub', { onclick: () => fortuneSheet(f) }, f ? '手动改' : '手动填'));
-  if (!f) {
+  if (!f || f.pending) {
     return h('div.row', { style: { padding: '12px 0', borderBottom: '1px solid var(--line)' } },
-      h('div.grow.sub.small', '今日运势'), actions);
+      h('div.grow.sub.small', f ? '今日运势 · 按你的八字和星盘推算中…' : '今日运势'), actions);
   }
   const calc = f.source === 'calc';
   const adv = calc ? aiAdvice(f) : (f.suggest || f.avoidDo ? { suggest: f.suggest, avoid: f.avoidDo } : null);
@@ -328,6 +357,7 @@ function fortuneRow() {
     f.baziLine ? h('div.tiny.sub', { style: { lineHeight: 1.6 } }, f.baziLine) : null,
     f.astroLine ? h('div.tiny.sub', { style: { lineHeight: 1.6 } }, f.astroLine) : null,
     backToCalc,
+    f.simple ? h('div.tiny.warn', { style: { lineHeight: 1.6, marginTop: '6px' } }, '星盘数据没加载上，今天先用简化算法（只看日柱），颜色可能和平时不同。联网后重新打开即可。') : null,
     calc && !settings.birth.date ? h('button.link.sm.sub', { style: { paddingBottom: 0 }, onclick: () => show('settings') }, '填出生信息，按你的八字和星盘来算') : null);
 }
 
@@ -394,7 +424,7 @@ function fortuneSheet(f, fresh = false) {
 }
 
 function swapAt(i) {
-  const n = engine().swap(outfit, i, settings.weather, settings.occasion, todayFortune());
+  const n = engine().swap(outfit, i, settings.weather, settings.occasion, fortuneForOutfit());
   if (!n) { toast('这一类没有别的可换了'); return; }
   outfit = n;
   renderToday();
@@ -839,12 +869,16 @@ function renderSettings() {
 
 function birthFields() {
   const b = settings.birth;
-  const changed = () => { settings.save(); outfit = null; if (b.date) loadLibs().then(l => { libs = l; }).catch(() => {}); };
+  const changed = () => { settings.save(); outfit = null; if (b.date) ensureLibs(); };
   const unknown = !b.time;
   const time = h('input', { type: 'time', value: b.time, disabled: unknown,
     onchange: e => { b.time = e.target.value; changed(); } });
+  const gBtn = (v, label) => h('button.chip', { class: b.gender === v ? 'on' : '', onclick: () => { b.gender = b.gender === v ? '' : v; changed(); renderSettings(); } }, label);
   return h('div',
-    h('label.field', { style: { marginTop: '4px' } }, h('span', '出生日期'),
+    h('div.field', { style: { marginTop: '4px' } }, h('span', '性别'),
+      h('div.chips', gBtn('male', '男'), gBtn('female', '女')),
+      h('small', '用来排大运（阳男阴女顺排）。不填就不算大运。')),
+    h('label.field', h('span', '出生日期'),
       h('input', { type: 'date', value: b.date, max: today(), min: '1920-01-01', onchange: e => { b.date = e.target.value; changed(); renderSettings(); } })),
     h('label.field', h('span', '出生时间'), time),
     h('button.row', { style: { padding: '8px 0', gap: '8px' }, onclick: () => {
@@ -855,7 +889,7 @@ function birthFields() {
       h('button', { style: { width: '100%', minHeight: '46px', border: '1px solid var(--line)', borderRadius: '6px', padding: '10px 12px', textAlign: 'left', fontSize: '16px' },
         onclick: () => regionPicker(place => { b.place = place; changed(); renderSettings(); }) },
         `${b.place?.name ?? cityOf(b.city).name}  ▾`),
-      h('small', `${b.place?.approx ? '这个区县的坐标用的是所在城市的位置，误差一般在几分钟以内。' : ''}精确到区县，用来做真太阳时校正和算上升星座。出生信息只存在这台设备上；生成每日建议时，只会把今天的幸运色这类结果发给模型，不发生日、时间和八字。`)));
+      h('small', `${b.place?.approx ? '这个区县的坐标用的是所在城市的位置，误差一般在几分钟以内。' : ''}精确到区县，用来做真太阳时校正和算上升星座。出生信息只存在这台设备上；生成每日建议时，只会把今天的幸运色这类结果和性别发给模型，不发生日、时间和八字。`)));
 }
 
 // ---------------- 出生地选择：省 → 市 → 区县，或直接搜 ----------------

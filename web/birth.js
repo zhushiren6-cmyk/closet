@@ -61,7 +61,21 @@ export function bazi(lunar, ms, lon, hasTime) {
   const pillars = [mk(ec.getYear(), ec.getYearHideGan()), mk(ec.getMonth(), ec.getMonthHideGan()), mk(ec.getDay(), ec.getDayHideGan())];
   if (hasTime) pillars.push(mk(ec.getTime(), ec.getTimeHideGan()));
   const master = pillars[2].stem;
-  return { pillars, master, masterEl: STEM_EL[master], solar: f };
+  return { pillars, master, masterEl: STEM_EL[master], solar: f, ec };
+}
+
+const MAIN_QI = { 子: '癸', 丑: '己', 寅: '甲', 卯: '乙', 辰: '戊', 巳: '丙', 午: '丁', 未: '己', 申: '庚', 酉: '辛', 戌: '戊', 亥: '壬' };
+/**
+ * 大运 for [year]: direction follows the year stem and [gender] ('male'|'female'; 阳男阴女顺排), start age from
+ * the solar terms (lunar-javascript getYun). Null without a gender or before the first decade starts.
+ */
+export function daYun(bz, gender, year) {
+  if (gender !== 'male' && gender !== 'female') return null;
+  const yun = bz.ec.getYun(gender === 'male' ? 1 : 0);
+  const d = yun.getDaYun(12).find(x => x.getGanZhi() && x.getStartYear() <= year && year <= x.getEndYear());
+  if (!d) return { name: '', startAge: yun.getDaYun(2)[1].getStartAge(), forward: yun.isForward() };
+  const name = d.getGanZhi();
+  return { name, stem: name[0], branch: name[1], startAge: d.getStartAge(), startYear: d.getStartYear(), forward: yun.isForward() };
 }
 
 /**
@@ -74,7 +88,7 @@ export function bazi(lunar, ms, lon, hasTime) {
  *   score = seasonal×2 + roots×1.5 + (support − drain)×0.5;  ≥2 strong, ≤−2 weak, between: by sign.
  * Favourable: strong → what drains it (output, wealth, power); weak → resource and self.
  */
-export function strength(bz) {
+export function strength(bz, luck = null) {
   const E = bz.masterEl;
   const S = SEASON_EL[bz.pillars[1].branch];
   const seasonal = S === E ? 3 : genOf(S) === E ? 1 : genOf(E) === S ? 0 : ctrlOf(S) === E ? -1 : -2;
@@ -85,6 +99,8 @@ export function strength(bz) {
   let support = 0, drain = 0;
   const others = [];
   bz.pillars.forEach((p, i) => { if (i !== 2) others.push(p.stem); others.push(p.hidden[0]); });
+  // The current 大运 counts like one more pillar's stem and main qi (岁运参与旺衰).
+  if (luck?.name) others.push(luck.stem, MAIN_QI[luck.branch]);
   for (const g of others) { const e = STEM_EL[g]; if (e === E || genOf(e) === E) support++; else drain++; }
   const score = seasonal * 2 + roots * 1.5 + (support - drain) * 0.5;
   const strong = score >= 0;
