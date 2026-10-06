@@ -26,6 +26,7 @@ function h(sel, attrs, ...kids) {
   kids.forEach(add);
   return el;
 }
+const VERSION = 'dev'; // replaced with the commit id at deploy
 const $ = id => document.getElementById(id);
 /** replaceChildren that skips null/false (plain replaceChildren would print them as text). */
 const put = (el, ...kids) => el.replaceChildren(...kids.flat(Infinity).filter(k => k != null && k !== false));
@@ -277,6 +278,9 @@ function fortuneRow() {
   }
   const calc = f.source === 'calc';
   const line = calc ? aiLine(f) : '';
+  const backToCalc = !calc && settings.autoFortune ? h('button.link.sm.sub', { style: { paddingBottom: 0 }, onclick: async () => {
+    await store.setFortune(today(), null); outfit = null; regenerate();
+  } }, '改用五行推算') : null;
   return h('div', { style: { padding: '12px 0', borderBottom: '1px solid var(--line)' } },
     h('div.row', h('div.eyebrow.grow', { style: { fontSize: '10px' } },
       calc ? `今日运势 · ${f.today}${f.master ? ' · 日主' + f.master : ''}` : '今日运势 · 来自截图 / 手动'), actions),
@@ -286,6 +290,7 @@ function fortuneRow() {
       f.avoid?.length ? h('span.sub', { style: { marginLeft: '10px', whiteSpace: 'nowrap' } }, `忌 ${f.avoid.join('、')}`) : null),
     line ? h('div', { style: { fontSize: '13px', marginTop: '4px' } }, line) : null,
     f.summary ? h('div.sub.small', { style: { marginTop: '2px' } }, f.summary) : null,
+    backToCalc,
     calc && !settings.birthday ? h('button.link.sm.sub', { style: { paddingBottom: 0 }, onclick: () => show('settings') }, '填生日，按你的五行来算') : null);
 }
 
@@ -790,6 +795,7 @@ function renderSettings() {
       }) }, '导入备份')),
     h('div.sub.small', { style: { marginTop: '10px', lineHeight: 1.7 } },
       '衣服照片和穿着记录只存在这台设备的浏览器里，不上传。导入时，截图会发给你选的模型服务做识别。清除浏览器数据会清空衣橱，记得定期导出备份。'),
+    h('div.tiny.sub', { style: { marginTop: '24px' } }, `版本 ${VERSION}`),
     standalone ? null : h('div.small', { style: { marginTop: '14px', lineHeight: 1.7, padding: '12px 14px', background: 'var(--tile)', borderRadius: '6px' } },
       'iPhone 上建议在 Safari 点「分享」→「添加到主屏幕」，像 App 一样打开。不添加的话，Safari 可能在你一段时间没打开后清掉数据。'),
   );
@@ -821,5 +827,14 @@ async function doExport() {
   }
   sweepImages();
   show(store.items.length ? 'today' : 'closet');
-  if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+  if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+    // A new version takes over in the background; reload once so it shows now, unless something is open.
+    const hadController = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!hadController) return; // first install, nothing old on screen
+      if (document.querySelector('.screen, .scrim')) toast('新版本已就绪，下次打开生效');
+      else location.reload();
+    });
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => r.update()).catch(() => {});
+  }
 })();

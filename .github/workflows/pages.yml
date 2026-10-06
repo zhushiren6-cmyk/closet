@@ -31,6 +31,7 @@ jobs:
           mkdir -p site && cp -r web/. site/ && rm -rf site/test && touch site/.nojekyll
           # New cache name per build so phones pick up the update on next open.
           sed -i "s/const CACHE = 'closet-v1'/const CACHE = 'closet-${GITHUB_SHA::8}'/" site/sw.js
+          sed -i "s/const VERSION = 'dev'/const VERSION = '${GITHUB_SHA::7}'/" site/app.js
       - name: Publish to gh-pages (GitHub Pages serves this branch)
         run: |
           cd site
