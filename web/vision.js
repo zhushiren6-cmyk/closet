@@ -9,6 +9,8 @@ export const PROVIDERS = [
   { id: 'DOUBAO', label: '豆包（火山方舟）', endpoint: 'https://ark.cn-beijing.volces.com/api/v3/chat/completions', model: 'doubao-seed-2-0-mini-260428', thinking: true },
   { id: 'QWEN', label: '通义千问（阿里百炼）', endpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions', model: 'qwen3-vl-plus' },
   { id: 'ZHIPU', label: '智谱 GLM', endpoint: 'https://open.bigmodel.cn/api/paas/v4/chat/completions', model: 'glm-4.6v', thinking: true },
+  // Kimi: temperature is fixed by the server (0.6 non-thinking) and other values are rejected, so never send it.
+  { id: 'KIMI', label: 'Kimi（月之暗面）', endpoint: 'https://api.moonshot.cn/v1/chat/completions', model: 'kimi-k2.6', noTemp: true, thinking: true },
   { id: 'SILICONFLOW', label: '硅基流动', endpoint: 'https://api.siliconflow.cn/v1/chat/completions', model: 'Qwen/Qwen3-VL-32B-Instruct' },
   { id: 'OPENAI', label: 'OpenAI', endpoint: 'https://api.openai.com/v1/chat/completions', model: 'gpt-5-mini', noTemp: true, newTokens: true, overseas: true },
   { id: 'GEMINI', label: 'Google Gemini', endpoint: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', model: 'gemini-3.8-flash', overseas: true },
