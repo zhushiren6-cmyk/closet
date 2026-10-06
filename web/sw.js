@@ -1,7 +1,7 @@
 // Offline shell. App files: serve from cache, refresh in the background (new versions apply on next open).
 // Model API calls are cross-origin and never touched.
 const CACHE = 'closet-v1';
-const SHELL = ['./', 'index.html', 'app.css', 'app.js', 'engine.js', 'vision.js', 'fortune.js', 'db.js', 'images.js',
+const SHELL = ['./', 'index.html', 'app.css', 'app.js', 'engine.js', 'vision.js', 'fortune.js', 'birth.js', 'daily.js', 'cities.js', 'vendor/lunar.js', 'vendor/astronomy.js', 'db.js', 'images.js',
   'manifest.webmanifest', 'fonts/serif_sc.woff2', 'fonts/display.woff2', 'icons/icon-192.png', 'icons/apple-touch-icon.png'];
 
 self.addEventListener('install', e => {

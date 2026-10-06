@@ -5,8 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>衣橱</title>
   <meta name="description" content="导入购物截图，自动整理衣橱，每天给一套搭配。">
-  <meta name="theme-color" content="#FAF9F6" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#131312" media="(prefers-color-scheme: dark)">
+  <!-- One plain theme-color: iOS home-screen apps ignore media-specific ones and paint the status bar grey. -->
+  <meta name="theme-color" content="#FAF9F6" id="themeColor">
+  <script>if (matchMedia('(prefers-color-scheme: dark)').matches) document.getElementById('themeColor').content = '#131312';</script>
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">

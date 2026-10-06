@@ -3,6 +3,8 @@ import {
 } from './engine.js';
 import { PROVIDERS, providerOf, missingOf, modelOf, recognize, recognizeFortune, testConnection, chat, VisionError } from './vision.js';
 import { computeFortune } from './fortune.js';
+import { computeDaily, loadLibs } from './daily.js';
+import { CITIES, cityOf } from './cities.js';
 import { store, imageUrl, putImage, revoke, exportBackup, importBackup, sweepImages } from './db.js';
 import { decode, toDataUrl, toBlob, crop } from './images.js';
 
@@ -48,7 +50,10 @@ const settings = (() => {
   try { s = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch { s = {}; }
   s.provider ??= 'DOUBAO'; s.key ??= {}; s.model ??= {}; s.endpoint ??= {};
   s.weather ??= 'WARM'; s.occasion ??= '日常';
-  s.birthday ??= ''; s.autoFortune ??= true;
+  s.autoFortune ??= true;
+  // Birth profile; older versions only stored a birthday.
+  s.birth ??= { date: s.birthday ?? '', time: '', city: '北京' };
+  delete s.birthday;
   if (!OCCASIONS.includes(s.occasion)) s.occasion = '日常';
   s.save = () => { try { localStorage.setItem(KEY, JSON.stringify({ ...s, save: undefined })); } catch { /* private mode */ } };
   return s;
@@ -244,19 +249,32 @@ const dot = c => h('i', { style: { display: 'inline-block', width: '10px', heigh
   boxShadow: 'inset 0 0 0 1px rgba(128,128,128,.35)', marginRight: '5px', verticalAlign: '-1px' } });
 
 /** The fortune in effect today: one imported/entered by hand wins, otherwise the computed one (if enabled). */
+let libs = null; // lunar + astronomy, loaded once a birth date is set
 function todayFortune() {
-  return store.fortune(today()) ?? (settings.autoFortune ? computeFortune(today(), settings.birthday) : null);
+  const own = store.fortune(today());
+  if (own || !settings.autoFortune) return own;
+  try { return computeDaily(today(), settings.birth, libs); }
+  catch { return computeFortune(today(), settings.birth.date); }
+}
+/** Loads the chart libraries; resolves quickly (max ~4 s) so the page never waits long. */
+function ensureLibs() {
+  if (libs || !settings.birth.date) return Promise.resolve();
+  return Promise.race([
+    loadLibs().then(l => { libs = l; }).catch(() => {}),
+    new Promise(r => setTimeout(r, 4000)),
+  ]);
 }
 
 // One AI sentence per day (and per birthday), cached; fetched in the background, never blocks the page.
 const AI_LINE_KEY = 'closet.aiLine';
 let aiLineTried = '';
 function aiLine(f) {
-  const k = `${today()}|${settings.birthday}|${f.colors.join()}|${f.stones.join()}`;
+  const k = `${today()}|${JSON.stringify(settings.birth)}|${f.colors.join()}|${f.stones.join()}`;
   try { const c = JSON.parse(localStorage.getItem(AI_LINE_KEY) || 'null'); if (c?.k === k) return c.text; } catch { /* ignore */ }
   if (aiLineTried === k || missingOf(settings, providerOf(settings.provider))) return '';
   aiLineTried = k;
-  chat(settings, `今日五行推算结果：${JSON.stringify({ 今日: f.today, 日主: f.master, 幸运色: f.colors, 忌: f.avoid, 推荐水晶: f.stones, 依据: f.summary })}`, {
+  // Only today's result goes out — never the pillars or chart, which would reveal the birth date/time.
+  chat(settings, `今日推算结果：${JSON.stringify({ 今日: f.today, 日主: f.master, 喜用: f.elements, 幸运色: f.colors, 忌: f.avoid, 推荐水晶: f.stones })}`, {
     system: '你是轻松的穿搭小助手。根据给定的五行推算结果，写一句 30 字以内的今日穿搭提示。语气轻松温和，可以提到幸运色或水晶，不恐吓、不承诺效果、不出现“迷信”“保证”等字眼。只输出这一句话，不要引号。',
     maxTokens: 300, timeoutMs: 30000,
   }).then(t => {
@@ -290,8 +308,10 @@ function fortuneRow() {
       f.avoid?.length ? h('span.sub', { style: { marginLeft: '10px', whiteSpace: 'nowrap' } }, `忌 ${f.avoid.join('、')}`) : null),
     line ? h('div', { style: { fontSize: '13px', marginTop: '4px' } }, line) : null,
     f.summary ? h('div.sub.small', { style: { marginTop: '2px' } }, f.summary) : null,
+    f.baziLine ? h('div.tiny.sub', { style: { marginTop: '6px', lineHeight: 1.6 } }, f.baziLine) : null,
+    f.astroLine ? h('div.tiny.sub', { style: { lineHeight: 1.6 } }, f.astroLine) : null,
     backToCalc,
-    calc && !settings.birthday ? h('button.link.sm.sub', { style: { paddingBottom: 0 }, onclick: () => show('settings') }, '填生日，按你的五行来算') : null);
+    calc && !settings.birth.date ? h('button.link.sm.sub', { style: { paddingBottom: 0 }, onclick: () => show('settings') }, '填出生信息，按你的八字和星盘来算') : null);
 }
 
 function importFortune() {
@@ -776,12 +796,10 @@ function renderSettings() {
       settings.autoFortune = !settings.autoFortune; settings.save(); outfit = null; renderSettings();
     } }, h('span.grow', { style: { fontSize: '15px' } }, '自动推算每日运势'),
       h('span.check', { class: settings.autoFortune ? 'on' : '' }, h('i', settings.autoFortune ? '✓' : ''))),
-    h('label.field', { style: { marginTop: '4px' } }, h('span', '生日'),
-      h('input', { type: 'date', value: settings.birthday, max: today(), min: '1920-01-01',
-        onchange: e => { settings.birthday = e.target.value; settings.save(); outfit = null; } }),
-      h('small', '用来算你的五行「日主」，只存在这台设备上，不会发给任何服务。不填就只按当天五行推算。')),
+    birthFields(),
     h('div.sub.small', { style: { marginTop: '10px', lineHeight: 1.7 } },
-      '按传统五行规则推算：生扶你的颜色为吉，克你的为忌，水晶按五行对应。仅供娱乐。导入测测截图或手动填写的当天，以那份为准。'),
+      '八字：按出生时间的真太阳时排四柱（会自动校正 1986–1991 年夏令时），判断日主强弱后定喜用神，幸运色和水晶跟着喜用神走。'
+      + '星盘：看今天月亮所在星座和你的上升（不知道时辰就用太阳）合不合拍。两边都认可的颜色排最前。仅供娱乐；导入测测截图或手动填写的当天，以那份为准。'),
 
     h('div.eyebrow', { style: { marginTop: '40px' } }, '数据'),
     h('div.hair', { style: { marginTop: '8px' } }),
@@ -799,6 +817,27 @@ function renderSettings() {
     standalone ? null : h('div.small', { style: { marginTop: '14px', lineHeight: 1.7, padding: '12px 14px', background: 'var(--tile)', borderRadius: '6px' } },
       'iPhone 上建议在 Safari 点「分享」→「添加到主屏幕」，像 App 一样打开。不添加的话，Safari 可能在你一段时间没打开后清掉数据。'),
   );
+}
+
+function birthFields() {
+  const b = settings.birth;
+  const changed = () => { settings.save(); outfit = null; if (b.date) loadLibs().then(l => { libs = l; }).catch(() => {}); };
+  const unknown = !b.time;
+  const time = h('input', { type: 'time', value: b.time, disabled: unknown,
+    onchange: e => { b.time = e.target.value; changed(); } });
+  return h('div',
+    h('label.field', { style: { marginTop: '4px' } }, h('span', '出生日期'),
+      h('input', { type: 'date', value: b.date, max: today(), min: '1920-01-01', onchange: e => { b.date = e.target.value; changed(); renderSettings(); } })),
+    h('label.field', h('span', '出生时间'), time),
+    h('button.row', { style: { padding: '8px 0', gap: '8px' }, onclick: () => {
+      b.time = b.time ? '' : '12:00'; changed(); renderSettings();
+    } }, h('span.check', { class: unknown ? 'on' : '', style: { width: '28px', height: '28px' } }, h('i', unknown ? '✓' : '')),
+      h('span.small', '不确定出生时间（不排时柱、不算上升）')),
+    h('label.field', h('span', '出生城市'),
+      h('button', { style: { width: '100%', height: '46px', border: '1px solid var(--line)', borderRadius: '6px', padding: '0 12px', textAlign: 'left', fontSize: '16px' },
+        onclick: () => sheet('出生城市', CITIES.map(c => ({ title: c.name })), CITIES.findIndex(c => c.name === b.city),
+          i => { b.city = CITIES[i].name; changed(); renderSettings(); }) }, `${cityOf(b.city).name}  ▾`),
+      h('small', '用来做真太阳时校正和算上升星座；列表里没有就选最近的城市。出生信息只存在这台设备上；生成每日那句提示时，只会把今天的幸运色、喜用五行这类结果发给模型，不发生日、时间和八字。')));
 }
 
 async function doExport() {
@@ -826,6 +865,7 @@ async function doExport() {
     return;
   }
   sweepImages();
+  await ensureLibs();
   show(store.items.length ? 'today' : 'closet');
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
     // A new version takes over in the background; reload once so it shows now, unless something is open.

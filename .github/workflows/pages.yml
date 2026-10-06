@@ -24,7 +24,7 @@ jobs:
       - name: Unit tests
         run: |
           set -o pipefail
-          node --test web/test/logic.test.mjs 2>&1 | tee test.log
+          node --test web/test/*.test.mjs 2>&1 | tee test.log
           echo "::notice::web $(grep -E '^# (tests|pass|fail) ' test.log | tr '\n' ' ')"
       - name: Prepare site
         run: |
