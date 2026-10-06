@@ -33,9 +33,10 @@ export function loadLibs() {
 /** Birth analysis depends only on the profile; cache it. */
 const cache = new Map();
 function analyse(libs, p) {
-  const key = `${p.date}|${p.time}|${p.city}`;
+  const key = `${p.date}|${p.time}|${JSON.stringify(p.place ?? p.city)}`;
   if (cache.has(key)) return cache.get(key);
-  const city = cityOf(p.city);
+  // A county picked from regions.json, or (older settings) one of the preset cities.
+  const city = p.place?.lat != null ? { lat: p.place.lat, lon: p.place.lon, tz: p.place.tz || 'Asia/Shanghai' } : cityOf(p.city);
   const hasTime = /^\d{2}:\d{2}$/.test(p.time ?? '');
   const ms = localToUtc(p.date, hasTime ? p.time : '12:00', city.tz);
   const bz = bazi(libs.lunar, ms, city.lon, hasTime);

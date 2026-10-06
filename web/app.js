@@ -851,11 +851,67 @@ function birthFields() {
       b.time = b.time ? '' : '12:00'; changed(); renderSettings();
     } }, h('span.check', { class: unknown ? 'on' : '', style: { width: '28px', height: '28px' } }, h('i', unknown ? '✓' : '')),
       h('span.small', '不确定出生时间（不排时柱、不算上升）')),
-    h('label.field', h('span', '出生城市'),
-      h('button', { style: { width: '100%', height: '46px', border: '1px solid var(--line)', borderRadius: '6px', padding: '0 12px', textAlign: 'left', fontSize: '16px' },
-        onclick: () => sheet('出生城市', CITIES.map(c => ({ title: c.name })), CITIES.findIndex(c => c.name === b.city),
-          i => { b.city = CITIES[i].name; changed(); renderSettings(); }) }, `${cityOf(b.city).name}  ▾`),
-      h('small', '用来做真太阳时校正和算上升星座；列表里没有就选最近的城市。出生信息只存在这台设备上；生成每日那句提示时，只会把今天的幸运色、喜用五行这类结果发给模型，不发生日、时间和八字。')));
+    h('label.field', h('span', '出生地'),
+      h('button', { style: { width: '100%', minHeight: '46px', border: '1px solid var(--line)', borderRadius: '6px', padding: '10px 12px', textAlign: 'left', fontSize: '16px' },
+        onclick: () => regionPicker(place => { b.place = place; changed(); renderSettings(); }) },
+        `${b.place?.name ?? cityOf(b.city).name}  ▾`),
+      h('small', `${b.place?.approx ? '这个区县的坐标用的是所在城市的位置，误差一般在几分钟以内。' : ''}精确到区县，用来做真太阳时校正和算上升星座。出生信息只存在这台设备上；生成每日建议时，只会把今天的幸运色这类结果发给模型，不发生日、时间和八字。`)));
+}
+
+// ---------------- 出生地选择：省 → 市 → 区县，或直接搜 ----------------
+
+let regionsP = null;
+const loadRegions = () => (regionsP ??= fetch('regions.json').then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+  .catch(e => { regionsP = null; throw e; }));
+
+/** Leaves are [name, lon, lat, approx?, tz?]; inner nodes are [name, children]. */
+const isLeaf = n => typeof n[1] === 'number';
+function leaves(tree, path = [], out = []) {
+  for (const n of tree) isLeaf(n) ? out.push({ path: [...path, n[0]], n }) : leaves(n[1], [...path, n[0]], out);
+  return out;
+}
+
+function regionPicker(onPick) {
+  const body = h('div.body');
+  const close = () => screen.remove();
+  const search = h('input', { type: 'search', placeholder: '搜区县，例如 汶川、西湖区', autocomplete: 'off',
+    style: { width: '100%', height: '42px', border: '1px solid var(--line)', borderRadius: '21px', padding: '0 16px', background: 'transparent', fontSize: '16px', outline: 'none' } });
+  const list = h('div');
+  const crumbs = h('div.row', { style: { flexWrap: 'wrap', gap: '6px', margin: '14px 0 4px' } });
+  const screen = h('div.screen', body);
+  body.append(h('button.back', { onclick: close }, '←'),
+    h('div', { style: { fontSize: '20px', fontWeight: 500, margin: '8px 0 14px' } }, '出生地'), search, crumbs, list);
+  document.body.append(screen);
+  const pick = (path, n) => {
+    close();
+    onPick({ name: path.join(' '), lon: n[1], lat: n[2], approx: !!n[3], tz: n[4] || 'Asia/Shanghai' });
+  };
+  const row = (title, sub, onclick) => h('button.opt', { style: { display: 'flex', width: '100%', padding: '14px 0', borderBottom: '1px solid var(--line)', textAlign: 'left', fontSize: '16px' }, onclick },
+    h('span.grow', title), sub ? h('span.sub.small', sub) : null);
+  let tree = null, stack = [];
+  const draw = () => {
+    const q = search.value.trim();
+    if (q) {
+      const hits = leaves(tree).filter(x => x.path[x.path.length - 1].includes(q) || x.path.join('').includes(q)).slice(0, 60);
+      put(crumbs);
+      put(list, hits.length ? hits.map(x => row(x.path[x.path.length - 1], x.path.slice(0, -1).join(' '), () => pick(x.path, x.n)))
+        : h('div.sub.small', { style: { padding: '20px 0' } }, '没找到，换个字试试，或者逐级选择'));
+      return;
+    }
+    let nodes = tree;
+    for (const i of stack) nodes = nodes[i][1];
+    const path = []; let t = tree;
+    for (const i of stack) { path.push(t[i][0]); t = t[i][1]; }
+    put(crumbs, h('button.link.sm', { onclick: () => { stack = []; draw(); } }, '全部'),
+      path.map((p, k) => [h('span.sub.small', '›'), h('button.link.sm', { onclick: () => { stack = stack.slice(0, k + 1); draw(); } }, p)]));
+    put(list, nodes.map((n, i) => isLeaf(n)
+      ? row(n[0], n[3] ? '近似坐标' : '', () => pick([...path, n[0]], n))
+      : row(n[0], '›', () => { stack.push(i); draw(); body.scrollTop = 0; })));
+  };
+  search.addEventListener('input', draw);
+  put(list, h('div.status.busy', h('i'), h('span', '加载地区列表…')));
+  loadRegions().then(t => { tree = t; draw(); })
+    .catch(() => put(list, h('div.status.warn', h('i'), h('span', '地区列表加载失败，请联网后重试'))));
 }
 
 async function doExport() {

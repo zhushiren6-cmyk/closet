@@ -88,3 +88,32 @@ test('daily fortune from a full profile', () => {
   }
   assert.ok(seen.size >= 3, `colours vary across the year: ${[...seen]}`);
 });
+
+// ---------------- county-level birth places ----------------
+import { readFileSync } from 'node:fs';
+
+test('regions.json: every county has plausible coordinates', () => {
+  const tree = JSON.parse(readFileSync(new URL('../regions.json', import.meta.url), 'utf8'));
+  const out = [];
+  const walk = (nodes, path) => nodes.forEach(n => (typeof n[1] === 'number' ? out.push([path, n]) : walk(n[1], [...path, n[0]])));
+  walk(tree, []);
+  const mainland = out.filter(([p]) => p[0] !== '港澳台' && p[0] !== '海外');
+  assert.ok(mainland.length >= 2800, `${mainland.length} counties`);
+  for (const [p, n] of mainland) assert.ok(n[1] > 73 && n[1] < 136 && n[2] > 3 && n[2] < 54, `${p.join('/')}/${n[0]} ${n[1]},${n[2]}`);
+  const find = (...names) => out.find(([p, n]) => [...p, n[0]].join('/') === names.join('/'))?.[1];
+  const wc = find('四川省', '阿坝藏族羌族自治州', '汶川县');
+  assert.ok(wc && Math.abs(wc[1] - 103.59) < 0.05 && Math.abs(wc[2] - 31.48) < 0.05, JSON.stringify(wc));
+  const ns = find('广东省', '深圳市', '南山区');
+  assert.ok(ns && Math.abs(ns[1] - 113.93) < 0.05, JSON.stringify(ns));
+  assert.ok(find('海外', '纽约')[4] === 'America/New_York');
+});
+
+test('a county birth place drives true solar time', () => {
+  const libs = { lunar, A };
+  // Same Beijing clock time 10:30 on 1995-11-02 (equation of time ≈ +16 min):
+  //   Dongcheng 116.4°E: 10:30 − 14 + 16 ≈ 10:32 -> 巳时;  Kashgar 76.0°E: 10:30 − 176 + 16 ≈ 07:50 -> 辰时.
+  const bj = computeDaily('2026-10-06', { date: '1995-11-02', time: '10:30', place: { name: '北京市 东城区', lon: 116.416, lat: 39.928, tz: 'Asia/Shanghai' } }, libs, 'Asia/Shanghai');
+  const ks = computeDaily('2026-10-06', { date: '1995-11-02', time: '10:30', place: { name: '新疆 喀什市', lon: 75.99, lat: 39.47, tz: 'Asia/Shanghai' } }, libs, 'Asia/Shanghai');
+  assert.match(bj.baziLine, /巳 ·/);
+  assert.match(ks.baziLine, /辰 ·/);
+});
