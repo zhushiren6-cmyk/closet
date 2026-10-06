@@ -44,13 +44,22 @@ const allImageKeys = () => tx('images', 'readonly', s => s.getAllKeys());
 export const store = {
   items: [],
   wears: {}, // 'YYYY-MM-DD' -> [ids]
+  fortunes: {}, // 'YYYY-MM-DD' -> { colors, colorText, avoid, stones, summary }
 
   async load() {
     const st = (await getKV('state')) ?? {};
     this.items = Array.isArray(st.items) ? st.items : [];
     this.wears = st.wears && typeof st.wears === 'object' ? st.wears : {};
+    this.fortunes = st.fortunes && typeof st.fortunes === 'object' ? st.fortunes : {};
   },
-  save() { return setKV('state', { version: 1, items: this.items, wears: this.wears }); },
+  save() { return setKV('state', { version: 1, items: this.items, wears: this.wears, fortunes: this.fortunes }); },
+  fortune(day) { return this.fortunes[day] ?? null; },
+  async setFortune(day, f) {
+    if (f) this.fortunes[day] = f; else delete this.fortunes[day];
+    // Only recent days matter; keep the store small.
+    for (const d of Object.keys(this.fortunes).sort().slice(0, -30)) delete this.fortunes[d];
+    await this.save();
+  },
 
   item(id) { return this.items.find(i => i.id === id); },
   async add(list) { this.items.push(...list); await this.save(); },

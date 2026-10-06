@@ -1,5 +1,5 @@
 // Model providers, the recognition prompt, response parsing and the browser client.
-import { normalizeCat, normalizeColor, OCCASIONS } from './engine.js';
+import { normalizeCat, normalizeColor, OCCASIONS, COLOR_NAMES } from './engine.js';
 
 /**
  * Vision-capable, OpenAI-compatible providers. Same list and defaults as the Android app.
@@ -20,18 +20,19 @@ export const PROVIDERS = [
 export const providerOf = id => PROVIDERS.find(p => p.id === id) ?? PROVIDERS[0];
 
 export const SYSTEM_PROMPT = `你是衣橱录入助手。用户发来一张图片，可能是购物订单截图（淘宝、京东、拼多多、抖音、得物等，可能有一件或多件商品），也可能是衣物的实拍照片。
-请找出图里用户买的或拍的所有衣服、鞋子、包和配饰。忽略非服饰商品，忽略“为你推荐”“猜你喜欢”等推荐区域里的商品，同一件商品出现多次只输出一次。
+请找出图里用户买的或拍的所有衣服、鞋子、包、首饰和配饰。忽略非服饰商品，忽略“为你推荐”“猜你喜欢”等推荐区域里的商品，同一件商品出现多次只输出一次。
 
 每件输出：
 - name：12 个字以内，颜色+款式，例如“黑色宽松连帽卫衣”，去掉品牌名和营销词
-- cat：只能是 上装、下装、连衣裙、外套、鞋子、包、配饰 之一（半身裙算下装）
+- cat：只能是 上装、下装、连衣裙、外套、鞋子、包、首饰、配饰 之一（半身裙算下装；手链、项链、戒指、耳饰、水晶等算首饰）
 - color：主色，只能是 黑、白、灰、米、卡其、驼、棕、藏青、牛仔蓝、蓝、绿、红、粉、黄、橙、紫、花色 之一
 - warmth：厚度，1=薄（夏季）、2=适中（春秋）、3=厚（冬季）
 - occasions：适合的场合，从 日常、通勤、约会、运动、正式 中选 1-3 个
+- material：仅首饰填写，主要材质或宝石，例如“粉晶”“白水晶”“黄金”“925银”“珍珠”；其他类别填空字符串
 - box：[x1, y1, x2, y2]，商品图片在整张图中的位置，用 0-1000 的相对坐标（左上角为 0,0，右下角为 1000,1000）。订单截图框商品的缩略图，不要框文字；实拍照片框衣物本身。
 
 只输出一个 JSON 对象，不要代码围栏，不要任何解释：
-{"items":[{"name":"...","cat":"...","color":"...","warmth":2,"occasions":["日常"],"box":[x1,y1,x2,y2]}]}
+{"items":[{"name":"...","cat":"...","color":"...","warmth":2,"occasions":["日常"],"material":"","box":[x1,y1,x2,y2]}]}
 如果图里没有服饰，输出 {"items":[],"note":"原因"}`;
 
 export class VisionError extends Error {
@@ -89,6 +90,7 @@ export function parseResult(content, w, h) {
       color: normalizeColor(it.color || name),
       warmth: Math.min(3, Math.max(1, parseInt(it.warmth, 10) || 2)),
       occasions: occ,
+      material: String(it.material ?? '').trim().slice(0, 12),
       box: parseBox(it.box, w, h),
     });
   }
@@ -176,4 +178,46 @@ export async function recognize(s, jpegDataUrl, w, h) {
 export async function testConnection(s) {
   const reply = await chat(s, '回复“好”一个字。', { system: '你是测试助手。', maxTokens: 300, timeoutMs: 30000 });
   return reply.trim().slice(0, 20);
+}
+
+// ---------------- daily fortune (e.g. a 测测 screenshot) ----------------
+
+export const FORTUNE_PROMPT = `用户发来一张运势类 App（例如测测）的今日运势截图。请提取和穿搭有关的信息：
+- colorText：截图里写的幸运色原文，数组，例如 ["薄荷绿","米白"]
+- colors：把幸运色对应到这些标准色之一：黑、白、灰、米、卡其、驼、棕、藏青、牛仔蓝、蓝、绿、红、粉、黄、橙、紫，数组
+- avoid：截图里明确说不宜、忌讳的颜色，同样对应到标准色，数组，没有就 []
+- stones：推荐佩戴的饰品、水晶、宝石或材质原文，数组，例如 ["粉晶","黄金"]，没有就 []
+- summary：用一句话（20 字以内）概括截图里和穿搭、出门有关的建议，没有就空字符串
+只输出一个 JSON 对象，不要代码围栏，不要任何解释：
+{"colorText":[],"colors":[],"avoid":[],"stones":[],"summary":""}
+如果这不是运势截图，输出 {"ok":false,"note":"原因"}`;
+
+const STD = COLOR_NAMES.filter(c => c !== '花色');
+const toStd = list => [...new Set((Array.isArray(list) ? list : []).map(x => normalizeColor(String(x))).filter(c => STD.includes(c)))];
+
+/** Returns { colors, colorText, avoid, stones, summary }. Throws VisionError when it is not a fortune. */
+export function parseFortune(content) {
+  const text = String(content).trim();
+  const o = text.indexOf('{'), end = text.lastIndexOf('}');
+  if (o < 0 || end <= o) throw new VisionError('模型没有返回 JSON。', text.slice(0, 600));
+  let obj;
+  try { obj = JSON.parse(text.slice(o, end + 1)); } catch { throw new VisionError('模型返回的 JSON 无法解析。', text.slice(0, 600)); }
+  if (obj.ok === false) throw new VisionError(`这张图看起来不是运势截图${obj.note ? '：' + obj.note : ''}`);
+  const colorText = (Array.isArray(obj.colorText) ? obj.colorText : []).map(x => String(x).trim()).filter(Boolean).slice(0, 4);
+  // Prefer the model's mapping, fall back to mapping the original wording ourselves.
+  let colors = toStd(obj.colors);
+  if (!colors.length) colors = toStd(colorText.filter(t => /[黑白灰米卡驼棕咖褐藏青蓝绿红粉黄橙橘紫杏奶]/.test(t)));
+  const avoid = toStd(obj.avoid).filter(c => !colors.includes(c));
+  const stones = (Array.isArray(obj.stones) ? obj.stones : []).map(x => String(x).trim()).filter(Boolean).slice(0, 4);
+  const summary = String(obj.summary ?? '').trim().slice(0, 40);
+  if (!colors.length && !stones.length) throw new VisionError('没从截图里读到幸运色或推荐饰品，可以换一张更完整的截图，或手动填写。', text.slice(0, 600));
+  return { colors, colorText, avoid, stones, summary };
+}
+
+export async function recognizeFortune(s, jpegDataUrl) {
+  const content = await chat(s, [
+    { type: 'image_url', image_url: { url: jpegDataUrl } },
+    { type: 'text', text: '读出这张运势截图里的幸运色和推荐饰品。' },
+  ], { system: FORTUNE_PROMPT, maxTokens: 800 });
+  return parseFortune(content);
 }

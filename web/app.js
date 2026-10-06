@@ -1,7 +1,7 @@
 import {
   Cat, OCCASIONS, WARMTH, WEATHER, COLORS, colorOf, weatherOf, warmthLabel, OutfitEngine, dayKey, daysBetween,
 } from './engine.js';
-import { PROVIDERS, providerOf, missingOf, modelOf, recognize, testConnection, VisionError } from './vision.js';
+import { PROVIDERS, providerOf, missingOf, modelOf, recognize, recognizeFortune, testConnection, VisionError } from './vision.js';
 import { store, imageUrl, putImage, revoke, exportBackup, importBackup, sweepImages } from './db.js';
 import { decode, toDataUrl, toBlob, crop } from './images.js';
 
@@ -89,19 +89,19 @@ function tile(item, src, style = {}) {
 }
 const itemImage = it => (it.img ? imageUrl(it.id) : null);
 
-function chipsSingle(options, value, render = o => o) {
+function chipsSingle(options, value, render = o => o, onChange = () => {}) {
   let cur = value;
   const box = h('div.chips');
   const draw = () => put(box, options.map(o =>
-    h('button.chip', { class: o === cur ? 'on' : '', onclick: () => { cur = o; draw(); } }, render(o))));
+    h('button.chip', { class: o === cur ? 'on' : '', onclick: () => { cur = o; draw(); onChange(o); } }, render(o))));
   draw();
   return { el: box, get: () => cur };
 }
-function chipsMulti(options, values) {
+function chipsMulti(options, values, render = o => o) {
   const cur = new Set(values);
   const box = h('div.chips');
   const draw = () => put(box, options.map(o =>
-    h('button.chip', { class: cur.has(o) ? 'on' : '', onclick: () => { cur.has(o) ? cur.delete(o) : cur.add(o); draw(); } }, o)));
+    h('button.chip', { class: cur.has(o) ? 'on' : '', onclick: () => { cur.has(o) ? cur.delete(o) : cur.add(o); draw(); } }, render(o))));
   draw();
   return { el: box, get: () => options.filter(o => cur.has(o)) };
 }
@@ -110,7 +110,10 @@ function chipsMulti(options, values) {
 function editor(title, f, src, extras, onSave) {
   const close = () => scrim.remove();
   const name = h('input', { value: f.name, maxLength: 20, autocomplete: 'off' });
-  const cat = chipsSingle(Cat.ALL, f.cat);
+  const material = h('input', { value: f.material ?? '', maxLength: 12, placeholder: '例如 粉晶、白水晶、黄金、925银、珍珠', autocomplete: 'off' });
+  const materialField = h('label.field', h('span', '材质 / 宝石'), material);
+  const cat = chipsSingle(Cat.ALL, f.cat, o => o, v => { materialField.hidden = v !== Cat.JEWEL; });
+  materialField.hidden = f.cat !== Cat.JEWEL;
   const color = chipsSingle(COLORS.map(c => c.name), f.color, n => [h('i.d', { style: { background: colorOf(n).hex } }), n]);
   const warm = chipsSingle(WARMTH, warmthLabel(f.warmth));
   const occ = chipsMulti(OCCASIONS, f.occasions ?? []);
@@ -121,13 +124,14 @@ function editor(title, f, src, extras, onSave) {
         h('button.link', { style: { marginLeft: '20px' }, onclick: () => {
           close();
           onSave({ name: name.value.trim() || f.name, cat: cat.get(), color: color.get(),
-            warmth: WARMTH.indexOf(warm.get()) + 1, occasions: occ.get() });
+            warmth: WARMTH.indexOf(warm.get()) + 1, occasions: occ.get(),
+            material: cat.get() === Cat.JEWEL ? material.value.trim() : '' });
         } }, '保存')),
       src ? tile(f, src, { height: '170px', marginTop: '12px' }) : null,
       extras?.length ? h('div.row', { style: { gap: '22px' } },
         extras.map(x => h('button.link.sm', { class: x.danger ? 'warn' : '', onclick: () => { close(); x.run(); } }, x.label))) : null,
       h('label.field', h('span', '名称'), name),
-      h('div.lbl', '类别'), cat.el,
+      h('div.lbl', '类别'), cat.el, materialField,
       h('div.lbl', '颜色'), color.el,
       h('div.lbl', '厚度'), warm.el,
       h('div.lbl', '适合场合 · 不选 = 都行'), occ.el,
@@ -153,7 +157,7 @@ const engine = () => new OutfitEngine(store.items, store.lastWorn(), today());
 
 function regenerate() {
   const avoid = new Set(outfit?.pieces.map(p => p.id) ?? []);
-  const r = engine().generate(settings.weather, settings.occasion, avoid);
+  const r = engine().generate(settings.weather, settings.occasion, avoid, store.fortune(today()));
   outfit = r.missing ? null : r;
   renderToday(r.missing);
 }
@@ -175,11 +179,11 @@ function syncOutfit() {
 }
 
 const RATIO = { [Cat.DRESS]: 1.45, [Cat.OUTER]: 1.25, [Cat.BOTTOM]: 1.0, [Cat.TOP]: 0.8, [Cat.BAG]: 0.62 };
-const ORDER = [Cat.OUTER, Cat.DRESS, Cat.TOP, Cat.BOTTOM, Cat.SHOES, Cat.BAG, Cat.ACC];
+const ORDER = [Cat.OUTER, Cat.DRESS, Cat.TOP, Cat.BOTTOM, Cat.SHOES, Cat.BAG, Cat.JEWEL, Cat.ACC];
 
 function renderToday(missing) {
   if (!missing && !outfit && !syncOutfit()) {
-    const r = engine().generate(settings.weather, settings.occasion);
+    const r = engine().generate(settings.weather, settings.occasion, new Set(), store.fortune(today()));
     if (r.missing) missing = r.missing; else outfit = r;
   }
   const d = new Date();
@@ -196,6 +200,7 @@ function renderToday(missing) {
       h('button', { onclick: () => sheet('今天的场合', OCCASIONS.map(o => ({ title: o })), OCCASIONS.indexOf(settings.occasion),
         i => { settings.occasion = OCCASIONS[i]; settings.save(); regenerate(); }) },
         h('div.eyebrow', { style: { fontSize: '10px' } }, '场合'), h('div.v.ell', `${settings.occasion} `, h('span.sub.small', '▾')))),
+    fortuneRow(),
   ];
   const body = [];
   if (missing || !outfit) {
@@ -229,8 +234,93 @@ function renderToday(missing) {
   put($('p-today'), ...head, ...body);
 }
 
+// ---------------- 今日运势 ----------------
+
+const STD_COLORS = COLORS.map(c => c.name).filter(c => c !== '花色');
+const dot = c => h('i', { style: { display: 'inline-block', width: '10px', height: '10px', borderRadius: '5px', background: colorOf(c).hex,
+  boxShadow: 'inset 0 0 0 1px rgba(128,128,128,.35)', marginRight: '5px', verticalAlign: '-1px' } });
+
+function fortuneRow() {
+  const f = store.fortune(today());
+  if (!f) {
+    return h('div.row', { style: { padding: '12px 0', borderBottom: '1px solid var(--line)', gap: '18px' } },
+      h('div.grow.sub.small', '今日运势'),
+      h('button.link.sm', { onclick: importFortune }, '导入测测截图'),
+      h('button.link.sm.sub', { onclick: () => fortuneSheet(null) }, '手动填'));
+  }
+  return h('button', { style: { display: 'block', width: '100%', textAlign: 'left', padding: '12px 0', borderBottom: '1px solid var(--line)' },
+    onclick: () => fortuneSheet(f) },
+    h('div.row', h('div.eyebrow.grow', { style: { fontSize: '10px' } }, '今日运势'), h('span.sub.small', '修改 ▾')),
+    h('div', { style: { fontSize: '14px', marginTop: '6px', lineHeight: 1.7 } },
+      f.colors.length ? h('span', '幸运色 ', f.colors.map(c => h('span', { style: { marginRight: '10px' } }, dot(c), c))) : null,
+      f.stones.length ? h('span', `宜戴 ${f.stones.join('、')}`) : null,
+      f.avoid?.length ? h('span.sub', { style: { marginLeft: '10px' } }, `忌 ${f.avoid.join('、')}`) : null),
+    f.summary ? h('div.sub.small', { style: { marginTop: '2px' } }, f.summary) : null);
+}
+
+function importFortune() {
+  const miss = missingOf(settings, providerOf(settings.provider));
+  if (miss) { toast(miss); return; }
+  pickFiles($('pick1'), async ([file]) => {
+    const status = h('div.status.busy', h('i'), h('span', '正在读运势截图…'));
+    const scrim = h('div.scrim', h('div.sheet', status));
+    document.body.append(scrim);
+    try {
+      const c = await decode(file);
+      const f = await recognizeFortune(settings, toDataUrl(c));
+      scrim.remove();
+      fortuneSheet(f, true);
+    } catch (e) {
+      const ve = e instanceof VisionError;
+      put(scrim.firstChild,
+        h('div.status.warn', h('i'), h('span', ve ? e.message : `读取失败：${e.message ?? e}`)),
+        ve && e.raw ? h('div.raw', `服务返回：${e.raw.slice(0, 300)}`) : null,
+        h('div.row', { style: { gap: '22px' } },
+          h('button.link', { onclick: () => { scrim.remove(); importFortune(); } }, '换一张'),
+          h('button.link', { onclick: () => { scrim.remove(); fortuneSheet(null); } }, '手动填'),
+          h('button.link.sub', { onclick: () => scrim.remove() }, '关闭')));
+    }
+  });
+}
+
+/** Review/edit today's fortune. [fresh]: just recognised, so the sheet says so. */
+function fortuneSheet(f, fresh = false) {
+  const close = () => scrim.remove();
+  const swatch = n => [h('i.d', { style: { background: colorOf(n).hex } }), n];
+  const colors = chipsMulti(STD_COLORS, f?.colors ?? [], swatch);
+  const avoid = chipsMulti(STD_COLORS, f?.avoid ?? [], swatch);
+  const stones = h('input', { value: (f?.stones ?? []).join('、'), placeholder: '例如 粉晶、黄金（用顿号或逗号隔开）', autocomplete: 'off' });
+  const summary = h('input', { value: f?.summary ?? '', maxLength: 40, placeholder: '可不填', autocomplete: 'off' });
+  const save = async () => {
+    const nf = {
+      colors: colors.get(), avoid: avoid.get().filter(c => !colors.get().includes(c)),
+      stones: stones.value.split(/[、,，\s]+/).map(x => x.trim()).filter(Boolean).slice(0, 4),
+      summary: summary.value.trim(), colorText: f?.colorText ?? [],
+    };
+    close();
+    await store.setFortune(today(), nf.colors.length || nf.stones.length ? nf : null);
+    outfit = null;
+    regenerate();
+  };
+  const scrim = h('div.scrim', { onclick: e => { if (e.target === scrim) close(); } },
+    h('div.sheet',
+      h('div.row', h('div.grow', { style: { fontSize: '17px', fontWeight: 500 } }, fresh ? '核对一下运势' : '今日运势'),
+        h('button.link.sub', { onclick: close }, '取消'),
+        h('button.link', { style: { marginLeft: '20px' }, onclick: save }, '保存')),
+      fresh && f?.colorText?.length ? h('div.sub.small', { style: { marginTop: '6px' } }, `截图原文幸运色：${f.colorText.join('、')}`) : null,
+      h('div.lbl', '幸运色 · 每套搭配都会带上'), colors.el,
+      h('label.field', h('span', '推荐饰品 / 水晶'), stones),
+      h('div.lbl', '忌讳的颜色'), avoid.el,
+      h('label.field', h('span', '一句话提示'), summary),
+      f ? h('button.link.sm.warn', { style: { marginTop: '14px' }, onclick: async () => {
+        close(); await store.setFortune(today(), null); outfit = null; regenerate();
+      } }, '清除今日运势') : null,
+      h('div', { style: { height: '8px' } })));
+  document.body.append(scrim);
+}
+
 function swapAt(i) {
-  const n = engine().swap(outfit, i, settings.weather, settings.occasion);
+  const n = engine().swap(outfit, i, settings.weather, settings.occasion, store.fortune(today()));
   if (!n) { toast('这一类没有别的可换了'); return; }
   outfit = n;
   renderToday();
@@ -505,7 +595,8 @@ function openImport(files, manual) {
     for (const [i, d] of chosen.entries()) {
       const id = uid();
       if (d.blob) await putImage(id, d.blob);
-      items.push({ id, name: d.name, cat: d.cat, color: d.color, warmth: d.warmth, occasions: d.occasions, img: !!d.blob, added: now + i });
+      items.push({ id, name: d.name, cat: d.cat, color: d.color, warmth: d.warmth, occasions: d.occasions,
+        material: d.cat === Cat.JEWEL ? (d.material ?? '') : '', img: !!d.blob, added: now + i });
     }
     await store.add(items);
     navigator.storage?.persist?.().catch(() => {});

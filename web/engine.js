@@ -1,17 +1,18 @@
 // Pure logic shared by the web app and its tests. Ported from the Android app (Model.kt / Outfit.kt).
 
 export const Cat = {
-  TOP: '上装', BOTTOM: '下装', DRESS: '连衣裙', OUTER: '外套', SHOES: '鞋子', BAG: '包', ACC: '配饰',
+  TOP: '上装', BOTTOM: '下装', DRESS: '连衣裙', OUTER: '外套', SHOES: '鞋子', BAG: '包', JEWEL: '首饰', ACC: '配饰',
 };
-Cat.ALL = [Cat.TOP, Cat.BOTTOM, Cat.DRESS, Cat.OUTER, Cat.SHOES, Cat.BAG, Cat.ACC];
+Cat.ALL = [Cat.TOP, Cat.BOTTOM, Cat.DRESS, Cat.OUTER, Cat.SHOES, Cat.BAG, Cat.JEWEL, Cat.ACC];
 
 const CAT_RULES = [
   [['半身裙', '短裙', '长裙', '百褶裙', '裤', '下装'], Cat.BOTTOM],
   [['连衣裙', '裙'], Cat.DRESS],
   [['外套', '夹克', '大衣', '风衣', '羽绒', '西装', '开衫', '棉服', '冲锋衣', '马甲'], Cat.OUTER],
   [['鞋', '靴'], Cat.SHOES],
+  [['首饰', '手链', '手串', '手镯', '项链', '吊坠', '戒指', '耳钉', '耳环', '耳坠', '耳夹', '胸针', '水晶', '珍珠'], Cat.JEWEL],
   [['包'], Cat.BAG],
-  [['帽', '围巾', '腰带', '皮带', '项链', '耳', '手链', '戒指', '袜', '手套', '眼镜', '配饰', '饰'], Cat.ACC],
+  [['帽', '围巾', '腰带', '皮带', '袜', '手套', '眼镜', '发夹', '发箍', '配饰', '饰'], Cat.ACC],
 ];
 
 export function normalizeCat(raw) {
@@ -84,6 +85,41 @@ export function daysBetween(fromKey, toKey) {
 }
 
 const BASE = new Set([Cat.TOP, Cat.BOTTOM, Cat.DRESS]);
+/** Pieces that can carry the day's lucky colour (jewellery is chosen separately, from the fortune's stones). */
+const LUCKY_SLOTS = new Set([Cat.TOP, Cat.BOTTOM, Cat.DRESS, Cat.OUTER, Cat.SHOES, Cat.BAG]);
+
+/** "粉水晶" and "粉晶" name the same stone; compare without 水/石 and spaces. */
+const stoneKey = s => String(s ?? '').replace(/[水石\s]/g, '');
+export function stoneMatch(item, stone) {
+  const k = stoneKey(stone);
+  if (!k) return false;
+  const text = stoneKey(`${item.name ?? ''}${item.material ?? ''}`);
+  return text.includes(k) || (k.length >= 2 && k.endsWith('晶') && text.includes(k.slice(0, -1) + '晶'));
+}
+
+/**
+ * Jewellery for the day, driven by the fortune: one piece per recommended stone/material (max 2);
+ * if nothing matches a stone, one piece in a lucky colour. No fortune, no jewellery.
+ */
+export function pickJewelry(items, fortune, recency = () => 1, rnd = Math.random) {
+  if (!fortune) return { pieces: [], reasons: [] };
+  const jewels = items.filter(i => i.cat === Cat.JEWEL);
+  const lucky = new Set(fortune.colors ?? []);
+  const out = [], reasons = [];
+  const best = list => list.slice().sort((a, b) => recency(b.id) - recency(a.id) || rnd() - 0.5)[0];
+  for (const st of fortune.stones ?? []) {
+    if (out.length >= 2) break;
+    const hit = best(jewels.filter(j => !out.includes(j) && stoneMatch(j, st)));
+    if (hit) { out.push(hit); reasons.push(`测测推荐${st}，戴上「${hit.name}」`); }
+    else if (jewels.length) reasons.push(`测测推荐${st}，衣橱里还没有`);
+  }
+  if (!out.length) {
+    const hit = best(jewels.filter(j => lucky.has(j.color)));
+    if (hit) { out.push(hit); reasons.push(`「${hit.name}」是今天的幸运色`); }
+  }
+  if (!jewels.length && (fortune.stones?.length || lucky.size)) reasons.push('衣橱里还没有首饰，可以导入或手动添加');
+  return { pieces: out, reasons };
+}
 
 /**
  * Every candidate gets weight = recency × warmth fit × occasion fit. Hard rules pick the slots (dress or
@@ -125,7 +161,8 @@ export class OutfitEngine {
   }
 
   weight(it, w, occ, avoid) {
-    return this.recency(it.id) * this.warmthFit(it, w) * this.occasionFit(it, occ) * (avoid.has(it.id) ? 0.4 : 1);
+    const bad = this.fortune?.avoid?.includes(it.color) ? 0.1 : 1;
+    return this.recency(it.id) * this.warmthFit(it, w) * this.occasionFit(it, occ) * (avoid.has(it.id) ? 0.4 : 1) * bad;
   }
 
   pool(cat, w, occ, avoid, exclude = new Set()) {
@@ -162,8 +199,13 @@ export class OutfitEngine {
     return loud <= 1 ? 1 : loud === 2 ? 0.75 : loud === 3 ? 0.35 : 0.15;
   }
 
-  /** Returns { pieces, reasons } or { missing: message }. [avoid]: ids currently on screen. */
-  generate(w, occ, avoid = new Set()) {
+  /**
+   * Returns { pieces, reasons } or { missing: message }. [avoid]: ids currently on screen.
+   * [fortune]: { colors, avoid, stones } for today, or null. With a fortune, every outfit carries a lucky
+   * colour whenever the wardrobe has a wearable piece in one; colours to avoid are strongly down-weighted.
+   */
+  generate(w, occ, avoid = new Set(), fortune = null) {
+    this.fortune = fortune;
     const tops = this.pool(Cat.TOP, w, occ, avoid);
     const bottoms = this.pool(Cat.BOTTOM, w, occ, avoid);
     const dresses = this.pool(Cat.DRESS, w, occ, avoid);
@@ -175,41 +217,76 @@ export class OutfitEngine {
     const outers = this.pool(Cat.OUTER, w, occ, avoid);
     const shoes = this.pool(Cat.SHOES, w, occ, avoid);
     const bags = this.pool(Cat.BAG, w, occ, avoid);
+    const pools = { [Cat.TOP]: tops, [Cat.BOTTOM]: bottoms, [Cat.DRESS]: dresses, [Cat.OUTER]: outers, [Cat.SHOES]: shoes, [Cat.BAG]: bags };
+
+    // Lucky anchors: wearable pieces (weight > 0, not a make-do pick) in one of today's lucky colours.
+    const lucky = new Set(fortune?.colors ?? []);
+    const anchors = [];
+    for (const [cat, p] of Object.entries(pools)) {
+      if (!p || p.relaxed || !lucky.size) continue;
+      p.items.forEach((it, i) => {
+        if (!lucky.has(it.color) || p.weights[i] <= 0) return;
+        if ((cat === Cat.TOP || cat === Cat.BOTTOM) && !canSep) return;
+        anchors.push([it, p.weights[i]]);
+      });
+    }
+    const anchorPool = anchors.length ? { items: anchors.map(a => a[0]), weights: anchors.map(a => a[1]) } : null;
 
     let best = null, bestScore = -1;
-    for (let n = 0; n < 24; n++) {
+    for (let n = 0; n < 32; n++) {
+      const anchor = anchorPool ? this.draw(anchorPool)?.[0] : null;
+      const fixed = c => (anchor && anchor.cat === c ? [anchor, 1] : null);
       const pick = [];
-      const useDress = dresses && (!canSep || this.rnd() < 0.3);
-      if (useDress) { const d = this.draw(dresses); if (!d) continue; pick.push(d); }
+      const useDress = anchor?.cat === Cat.DRESS || (dresses && anchor?.cat !== Cat.TOP && anchor?.cat !== Cat.BOTTOM && (!canSep || this.rnd() < 0.3));
+      if (useDress) { const d = fixed(Cat.DRESS) ?? this.draw(dresses); if (!d) continue; pick.push(d); }
       else {
-        const t = this.draw(tops), b = this.draw(bottoms);
+        const t = fixed(Cat.TOP) ?? this.draw(tops), b = fixed(Cat.BOTTOM) ?? this.draw(bottoms);
         if (!t || !b) continue;
         pick.push(t, b);
       }
-      const wantOuter = w === 'COLD' ? true : w === 'COOL' ? this.rnd() < 0.7 : false;
-      if (wantOuter && outers && !outers.relaxed) { const o = this.draw(outers); if (o) pick.push(o); }
-      if (shoes) { const s = this.draw(shoes); if (s) pick.push(s); }
-      if (bags && this.rnd() < 0.6) { const b = this.draw(bags); if (b) pick.push(b); }
+      const wantOuter = anchor?.cat === Cat.OUTER || (w === 'COLD' ? true : w === 'COOL' ? this.rnd() < 0.7 : false);
+      if (wantOuter && outers && !outers.relaxed) { const o = fixed(Cat.OUTER) ?? this.draw(outers); if (o) pick.push(o); }
+      if (shoes) { const s = fixed(Cat.SHOES) ?? this.draw(shoes); if (s) pick.push(s); }
+      if (bags && (anchor?.cat === Cat.BAG || this.rnd() < 0.6)) { const b = fixed(Cat.BAG) ?? this.draw(bags); if (b) pick.push(b); }
       const gm = Math.pow(pick.reduce((a, [, x]) => a * x, 1), 1 / pick.length);
       const score = gm * this.colorScore(pick.map(([it]) => it));
       if (score > bestScore) { bestScore = score; best = pick; }
     }
     if (!best) return { missing: '这次没搭出来，再点一次试试' };
     const pieces = best.map(([it]) => it);
-    return { pieces, reasons: this.reasons(pieces, w, occ, [tops, bottoms, dresses].filter(Boolean)) };
+    const jewel = pickJewelry(this.items, fortune, id => this.recency(id), this.rnd);
+    const all = [...pieces, ...jewel.pieces];
+    return { pieces: all, reasons: [...this.reasons(all, w, occ, [tops, bottoms, dresses].filter(Boolean)), ...jewel.reasons] };
   }
 
   /** Replace the piece at [index] with another of the same category; null when there is nothing else. */
-  swap(outfit, index, w, occ) {
+  swap(outfit, index, w, occ, fortune = null) {
+    this.fortune = fortune;
     const cur = outfit.pieces[index];
     if (!cur) return null;
+    if (cur.cat === Cat.JEWEL) {
+      const others = this.items.filter(i => i.cat === Cat.JEWEL && i.id !== cur.id && !outfit.pieces.includes(i));
+      const lucky = new Set(fortune?.colors ?? []);
+      const pref = others.filter(j => (fortune?.stones ?? []).some(st => stoneMatch(j, st)) || lucky.has(j.color));
+      const list = pref.length ? pref : others;
+      if (!list.length) return null;
+      const pieces = outfit.pieces.slice();
+      pieces[index] = list[Math.floor(this.rnd() * list.length)];
+      return { pieces, reasons: outfit.reasons };
+    }
     const p = this.pool(cur.cat, w, occ, new Set(), new Set([cur.id]));
     if (!p) return null;
+    const lucky = new Set(fortune?.colors ?? []);
+    const carried = outfit.pieces.some((q, i) => i !== index && LUCKY_SLOTS.has(q.cat) && lucky.has(q.color));
+    if (lucky.has(cur.color) && !carried && p.items.some((it, i) => lucky.has(it.color) && p.weights[i] > 0)) {
+      p.weights = p.weights.map((x, i) => (lucky.has(p.items[i].color) ? x : 0));
+    }
     const d = this.draw(p);
     if (!d) return null;
     const pieces = outfit.pieces.slice();
     pieces[index] = d[0];
-    return { pieces, reasons: this.reasons(pieces, w, occ, []) };
+    const keep = (outfit.reasons ?? []).filter(r => r.startsWith('测测推荐') || r.includes('首饰'));
+    return { pieces, reasons: [...this.reasons(pieces, w, occ, []), ...keep] };
   }
 
   reasons(pieces, w, occ, basePools) {
@@ -225,6 +302,12 @@ export class OutfitEngine {
       else if (this.occasionFit(p, occ) < 1) out.push(`「${p.name}」不太适合${occ}，衣橱里这类可选的少`);
     }
     if (basePools.some(p => p.relaxed) && !out.some(s => s.includes('凑合'))) out.push('合适的单品不多，有几件是凑合的');
+    const lucky = this.fortune?.colors ?? [];
+    if (lucky.length) {
+      const carrier = pieces.find(p => LUCKY_SLOTS.has(p.cat) && lucky.includes(p.color));
+      out.unshift(carrier ? `今天幸运色是${lucky.join('、')}，「${carrier.name}」呼应了它`
+        : `今天幸运色是${lucky.join('、')}，衣橱里还没有能穿的这个颜色`);
+    }
     let notes = 0;
     for (const p of pieces) {
       if (notes >= 2) break;

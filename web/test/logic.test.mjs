@@ -123,3 +123,83 @@ test('normalizers and dates', () => {
   assert.equal(daysBetween('2026-09-28', '2026-10-05'), 7);
   assert.equal(daysBetween('2026-03-07', '2026-03-09'), 2);
 });
+
+// ---------------- fortune & jewellery ----------------
+import { pickJewelry, stoneMatch } from '../engine.js';
+import { parseFortune } from '../vision.js';
+
+const wardrobe = () => [
+  item(Cat.TOP, '白', 2), item(Cat.TOP, '绿', 2, [], '鼠尾草绿衬衫'), item(Cat.TOP, '红', 2),
+  item(Cat.BOTTOM, '黑', 2), item(Cat.BOTTOM, '牛仔蓝', 2), item(Cat.SHOES, '白'),
+  { ...item(Cat.JEWEL, '粉', 2, [], '粉晶手链'), material: '粉晶' },
+  { ...item(Cat.JEWEL, '白', 2, [], '珍珠耳钉'), material: '珍珠' },
+  { ...item(Cat.JEWEL, '黄', 2, [], '金色细项链'), material: '黄金' },
+];
+
+test('every outfit carries the lucky colour when the wardrobe has one', () => {
+  const ws = wardrobe();
+  const f = { colors: ['绿'], avoid: [], stones: [] };
+  for (let s = 0; s < 200; s++) {
+    const o = ok(new OutfitEngine(ws, {}, today, seeded(s)).generate(W[s % 4], '日常', new Set(), f));
+    assert.ok(o.pieces.some(p => p.color === '绿' && p.cat !== Cat.JEWEL), `seed ${s}: ${o.pieces.map(p => p.name)}`);
+    assert.ok(o.reasons[0].includes('幸运色'));
+  }
+});
+
+test('lucky colour missing from wardrobe: still dresses you and says so', () => {
+  const ws = wardrobe();
+  const o = ok(new OutfitEngine(ws, {}, today, seeded(3)).generate('WARM', '日常', new Set(), { colors: ['紫'], avoid: [], stones: [] }));
+  assert.ok(o.reasons.some(r => r.includes('还没有能穿的这个颜色')));
+});
+
+test('avoid colours are rarely picked', () => {
+  const ws = wardrobe();
+  let red = 0;
+  for (let s = 0; s < 300; s++) {
+    const o = ok(new OutfitEngine(ws, {}, today, seeded(s)).generate('WARM', '日常', new Set(), { colors: [], avoid: ['红'], stones: ['x'] }));
+    if (o.pieces.some(p => p.color === '红')) red++;
+  }
+  assert.ok(red < 25, `red picked ${red}/300`);
+});
+
+test('jewellery follows the recommended stones, none without a fortune', () => {
+  const ws = wardrobe();
+  assert.equal(pickJewelry(ws, null).pieces.length, 0);
+  const noFortune = ok(new OutfitEngine(ws, {}, today, seeded(1)).generate('WARM', '日常'));
+  assert.ok(!noFortune.pieces.some(p => p.cat === Cat.JEWEL));
+  const j = pickJewelry(ws, { colors: [], stones: ['粉水晶', '黄金'] });
+  assert.deepEqual(j.pieces.map(p => p.name), ['粉晶手链', '金色细项链']);
+  const miss = pickJewelry(ws, { colors: ['白'], stones: ['绿幽灵'] });
+  assert.ok(miss.reasons[0].includes('绿幽灵'));
+  assert.deepEqual(miss.pieces.map(p => p.name), ['珍珠耳钉']); // falls back to a lucky-colour piece
+  assert.ok(stoneMatch({ name: '白水晶吊坠', material: '' }, '白晶'));
+  assert.ok(!stoneMatch({ name: '黄金戒指', material: '黄金' }, '粉晶'));
+});
+
+test('swapping the only lucky piece keeps the lucky colour', () => {
+  const ws = [...wardrobe(), item(Cat.TOP, '绿', 2, [], '绿色针织')];
+  const f = { colors: ['绿'], avoid: [], stones: [] };
+  const o = ok(new OutfitEngine(ws, {}, today, seeded(5)).generate('WARM', '日常', new Set(), f));
+  const i = o.pieces.findIndex(p => p.color === '绿' && p.cat !== Cat.JEWEL);
+  for (let s = 0; s < 30; s++) {
+    const n = new OutfitEngine(ws, {}, today, seeded(100 + s)).swap(o, i, 'WARM', '日常', f);
+    assert.ok(n && n.pieces[i].color === '绿' && n.pieces[i].id !== o.pieces[i].id);
+  }
+});
+
+test('parses fortune screenshots and rejects non-fortunes', () => {
+  const f = parseFortune('```json\n{"colorText":["薄荷绿","奶白"],"colors":["绿","白","花色"],"avoid":["黑","绿"],"stones":["粉晶"],"summary":"宜出门见朋友"}\n```');
+  assert.deepEqual(f.colors, ['绿', '白']);
+  assert.deepEqual(f.avoid, ['黑']);
+  assert.deepEqual(f.stones, ['粉晶']);
+  const g = parseFortune('{"colorText":["酒红色"],"colors":[],"avoid":[],"stones":[]}');
+  assert.deepEqual(g.colors, ['红']);
+  assert.throws(() => parseFortune('{"ok":false,"note":"这是订单截图"}'), /不是运势截图/);
+  assert.throws(() => parseFortune('{"colorText":[],"colors":[],"stones":[]}'), /没从截图里读到/);
+  assert.throws(() => parseFortune('今天运势不错'), VisionError);
+});
+
+test('jewellery keywords map to 首饰', () => {
+  for (const s of ['粉晶手链', '珍珠耳钉', '黄金项链', '银戒指', '首饰']) assert.equal(normalizeCat(s), Cat.JEWEL, s);
+  assert.equal(normalizeCat('渔夫帽'), Cat.ACC);
+});
