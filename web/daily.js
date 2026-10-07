@@ -92,6 +92,7 @@ export function computeDaily(today, profile, libs, tz = Intl.DateTimeFormat().re
     source: 'calc', colors: [color], avoid: [], stones: [stone],
     today: `${day.name}日 · ${D}`,
     master: `${bz.master}${bz.masterEl}`,
+    sun: SIGNS[nat.sun],
     element: lucky, elements: [lucky], theme: themeOf(bz.masterEl, lucky), gender: profile.gender || '',
     baziLine: `八字 ${pillars}${hasTime ? '' : '（缺时柱）'}${luckText} · ${bz.master}${bz.masterEl}日主${st.level} · 喜${st.favorable.join('')} · 忌${st.avoid}`,
     astroLine: `星盘 太阳${SIGNS[nat.sun]} · 月亮${SIGNS[nat.moon]}${nat.moonUncertain ? '?' : ''}${nat.asc != null ? ' · 上升' + SIGNS[nat.asc] : ''}`,

@@ -51,6 +51,7 @@ const settings = (() => {
   s.provider ??= 'DOUBAO'; s.key ??= {}; s.model ??= {}; s.endpoint ??= {};
   s.weather ??= 'WARM'; s.occasion ??= '日常';
   s.autoFortune ??= true;
+  s.name ??= '';
   // Birth profile; older versions only stored a birthday.
   s.birth ??= { date: s.birthday ?? '', time: '', city: '北京' };
   s.birth.gender ??= '';
@@ -191,6 +192,14 @@ function syncOutfit() {
 const RATIO = { [Cat.DRESS]: 1.45, [Cat.OUTER]: 1.25, [Cat.BOTTOM]: 1.0, [Cat.TOP]: 0.8, [Cat.BAG]: 0.62 };
 const ORDER = [Cat.OUTER, Cat.DRESS, Cat.TOP, Cat.BOTTOM, Cat.SHOES, Cat.BAG, Cat.JEWEL, Cat.ACC];
 
+/** 「早上好，Felix」 with a name, otherwise the plain title. */
+function greeting(d = new Date()) {
+  const n = (settings.name || '').trim();
+  if (!n) return '今天穿什么';
+  const hr = d.getHours();
+  return `${hr < 5 ? '夜深了' : hr < 11 ? '早上好' : hr < 13 ? '中午好' : hr < 18 ? '下午好' : '晚上好'}，${n}`;
+}
+
 function renderToday(missing) {
   if (outfitDay !== today()) { outfitDay = today(); outfit = null; }
   if (!missing && !outfit && !syncOutfit()) {
@@ -203,7 +212,7 @@ function renderToday(missing) {
     h('div.eyebrow', `${d.toLocaleDateString('en-US', { weekday: 'long' })}  ·  ${d.toLocaleDateString('en-US', { month: 'long' })}`),
     h('div.row', { style: { alignItems: 'flex-end', gap: '14px', marginTop: '4px' } },
       h('div.num', String(d.getDate()).padStart(2, '0')),
-      h('div.serif', { style: { fontSize: '24px', paddingBottom: '6px' } }, '今天穿什么')),
+      h('div.serif.ell', { style: { fontSize: '24px', paddingBottom: '6px', minWidth: 0 } }, greeting())),
     h('div.selectors',
       h('button', { onclick: () => sheet('今天天气', WEATHER.map(x => ({ title: x.label, note: x.hint })), WEATHER.indexOf(w),
         i => { settings.weather = WEATHER[i].id; settings.save(); regenerate(); }) },
@@ -794,7 +803,77 @@ function cropScreen(srcBlob, w, hgt, init, title) {
 
 // =============================== 设置 ===============================
 
+/** A second-level page over the current one. [build] returns its content and is called again on redraw(). */
+function subScreen(title, build, onClose = () => {}) {
+  const body = h('div.body');
+  const screen = h('div.screen.push', body);
+  const close = () => { screen.remove(); onClose(); };
+  const redraw = () => {
+    const y = body.scrollTop;
+    put(body, h('button.back', { onclick: close }, '←'),
+      h('div', { style: { fontSize: '22px', fontWeight: 500, margin: '8px 0 6px' } }, title), ...[build(redraw, close)].flat());
+    body.scrollTop = y;
+  };
+  document.body.append(screen);
+  redraw();
+}
+
+const cell = (label, value, onclick, right = h('span.chev', '›')) =>
+  h('button.cell', { onclick }, h('span.grow', label), value ? h('span.v', value) : null, right);
+
+/** "丁火日主 · 天蝎 · 东城区" — needs the chart libraries; without them only the place. */
+function profileSummary() {
+  const b = settings.birth;
+  if (!b.date) return '填出生信息，按八字和星盘推算运势';
+  const place = (b.place?.name ?? cityOf(b.city).name).split(' ').pop();
+  let f = null;
+  if (libs) { try { f = computeDaily(today(), b, libs); } catch { /* summary only */ } }
+  return [f?.master && `${f.master}日主`, f?.sun, place].filter(Boolean).join(' · ');
+}
+
 function renderSettings() {
+  const p = providerOf(settings.provider);
+  const hasKey = !missingOf(settings, p);
+  const name = settings.name || '';
+  put($('p-settings'),
+    h('div.eyebrow', 'Settings'),
+    h('div.serif.h1', { style: { marginTop: '6px', marginBottom: '24px' } }, '设置'),
+
+    h('button.me', { onclick: () => subScreen('个人资料', profilePage, renderSettings) },
+      h('div.av', (name.trim()[0] || '我').toUpperCase()),
+      h('div.grow', { style: { minWidth: 0 } },
+        h('div.ell', { style: { fontSize: '18px', fontWeight: 500 } }, name || '点这里填名字'),
+        h('div.ell.sub.small', { style: { marginTop: '4px' } }, profileSummary())),
+      h('span.chev.sub', { style: { fontSize: '18px' } }, '›')),
+
+    h('div.group', h('div.eyebrow', 'AI 模型'),
+      cell('识别模型', `${p.label.replace(/（.*）/, '')} · ${hasKey ? '已填 Key' : '未填 Key'}`, () => subScreen('识别模型', modelPage, renderSettings))),
+
+    h('div.group', h('div.eyebrow', '每日运势'),
+      cell('自动推算每日运势', '', () => { settings.autoFortune = !settings.autoFortune; settings.save(); outfit = null; renderSettings(); },
+        h('span.check', { class: settings.autoFortune ? 'on' : '', style: { width: '28px', height: '28px' } }, h('i', settings.autoFortune ? '✓' : ''))),
+      cell('运势怎么算', '', () => subScreen('运势怎么算', fortuneHelpPage))),
+
+    h('div.group', h('div.eyebrow', '数据'),
+      cell('备份与恢复', `${store.items.length} 件`, () => subScreen('备份与恢复', dataPage, renderSettings))),
+
+    h('div.group', h('div.eyebrow', '关于'),
+      cell('版本', VERSION, () => subScreen('关于', aboutPage))),
+  );
+}
+
+function profilePage(redraw) {
+  const nameInput = h('input', { value: settings.name || '', maxLength: 12, placeholder: '例如 Felix', autocomplete: 'off', autocapitalize: 'off', spellcheck: false,
+    oninput: () => { settings.name = nameInput.value.trim(); settings.save(); } });
+  return [
+    h('label.field', h('span', '用户名'), nameInput, h('small', '显示在设置和今天页的问候里，只存在这台设备上。')),
+    h('div.eyebrow', { style: { marginTop: '40px' } }, '出生信息'),
+    h('div.hair', { style: { marginTop: '8px' } }),
+    birthFields(redraw),
+  ];
+}
+
+function modelPage(redraw) {
   const p = providerOf(settings.provider);
   const fld = (label, key, opts = {}) => {
     const input = h('input', { type: opts.type ?? 'text', value: settings[key]?.[p.id] ?? '', placeholder: opts.placeholder ?? '',
@@ -803,29 +882,18 @@ function renderSettings() {
     return h('label.field', h('span', label), input, opts.help ? h('small', opts.help) : null);
   };
   const testOut = h('div.small', { style: { marginTop: '6px', minHeight: '18px' } });
-  const all = store.items, last = store.lastWorn(), t = today();
-  const idle = all.filter(i => !last[i.id]).length;
-  const stale = all.filter(i => last[i.id] && daysBetween(last[i.id], t) > 30).length;
-  const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
-
-  put($('p-settings'), 
-    h('div.eyebrow', 'Settings'),
-    h('div.serif.h1', { style: { marginTop: '6px', marginBottom: '30px' } }, '设置'),
-
-    h('div.eyebrow', '识别用的模型'),
-    h('div.hair', { style: { marginTop: '8px' } }),
-    h('button.row', { style: { width: '100%', padding: '16px 0', textAlign: 'left' }, onclick: () =>
-      sheet('识别用的模型', PROVIDERS.map(x => ({ title: x.label, note: x.overseas ? '需代理' : '' })), PROVIDERS.indexOf(p),
-        i => { settings.provider = PROVIDERS[i].id; settings.save(); renderSettings(); }) },
-      h('span.grow', { style: { fontSize: '16px' } }, p.label), h('span.sub', '▾')),
-    h('div.hair'),
-    h('div.sub.small', { style: { marginTop: '10px', lineHeight: 1.7 } },
-      p.id === 'CUSTOM' ? '任何兼容 OpenAI 格式、能看图的接口都可以。' : p.overseas ? '海外服务，国内网络通常需要开代理。' : '国内可直连。',
-      ' 必须是能看图的模型，DeepSeek 不行。Key 只存在这台设备的浏览器里。'),
+  return [
+    h('div.field', h('span', '服务商')),
+    h('div', h('button.cell', { style: { borderTop: '1px solid var(--line)' }, onclick: () =>
+        sheet('识别用的模型', PROVIDERS.map(x => ({ title: x.label, note: x.overseas ? '需代理' : '' })), PROVIDERS.indexOf(p),
+          i => { settings.provider = PROVIDERS[i].id; settings.save(); redraw(); }) },
+        h('span.grow', p.label), h('span.sub', '▾')),
+      h('div.tiny.sub', { style: { marginTop: '6px', lineHeight: 1.6 } }, (p.id === 'CUSTOM' ? '任何兼容 OpenAI 格式、能看图的接口都可以。' : p.overseas ? '海外服务，国内网络通常需要开代理。' : '国内可直连。')
+        + ' 必须是能看图的模型，DeepSeek 不行。')),
     p.id === 'CUSTOM' ? fld('接口地址', 'endpoint', { placeholder: 'https://api.example.com/v1' }) : null,
-    fld('API Key', 'key', { type: 'password' }),
+    fld('API Key', 'key', { type: 'password', help: 'Key 只存在这台设备的浏览器里，不进备份文件。每个服务商的 Key 分开存。' }),
     fld('模型名', 'model', { placeholder: p.model || '必填', help: p.id === 'CUSTOM' ? '填该接口支持看图的模型名' : `留空使用默认：${p.model}` }),
-    h('div.row', { style: { marginTop: '10px', gap: '16px' } },
+    h('div.row', { style: { marginTop: '14px' } },
       h('button.link', { onclick: async () => {
         testOut.className = 'small sub'; testOut.textContent = '测试中…';
         try {
@@ -837,59 +905,70 @@ function renderSettings() {
         }
       } }, '测试连接')),
     testOut,
-
-    h('div.eyebrow', { style: { marginTop: '40px' } }, '每日运势'),
-    h('div.hair', { style: { marginTop: '8px' } }),
-    h('button.row', { style: { width: '100%', padding: '14px 0', textAlign: 'left' }, onclick: () => {
-      settings.autoFortune = !settings.autoFortune; settings.save(); outfit = null; renderSettings();
-    } }, h('span.grow', { style: { fontSize: '15px' } }, '自动推算每日运势'),
-      h('span.check', { class: settings.autoFortune ? 'on' : '' }, h('i', settings.autoFortune ? '✓' : ''))),
-    birthFields(),
-    h('div.sub.small', { style: { marginTop: '10px', lineHeight: 1.7 } },
-      '八字：按出生时间的真太阳时排四柱（会自动校正 1986–1991 年夏令时），判断日主强弱后定喜用神，幸运色和水晶跟着喜用神走。'
-      + '星盘：看今天月亮所在星座和你的上升（不知道时辰就用太阳）合不合拍。两边都认可的颜色排最前。仅供娱乐；导入测测截图或手动填写的当天，以那份为准。'),
-
-    h('div.eyebrow', { style: { marginTop: '40px' } }, '数据'),
-    h('div.hair', { style: { marginTop: '8px' } }),
-    h('div', { style: { fontSize: '15px', marginTop: '16px' } },
-      all.length ? `共 ${all.length} 件，${idle} 件从没穿过，${stale} 件超过 30 天没穿。` : '衣橱还是空的。'),
-    h('div.row', { style: { gap: '22px', marginTop: '6px' } },
-      h('button.link', { onclick: doExport }, '导出备份'),
-      h('button.link', { onclick: () => pickFiles($('pickBackup'), async ([f]) => {
-        try { const n = await importBackup(f); toast(`已导入 ${n} 件`); outfit = null; show('settings'); }
-        catch (e) { toast(e.message); }
-      }) }, '导入备份')),
-    h('div.sub.small', { style: { marginTop: '10px', lineHeight: 1.7 } },
-      '衣服照片和穿着记录只存在这台设备的浏览器里，不上传。导入时，截图会发给你选的模型服务做识别。清除浏览器数据会清空衣橱，记得定期导出备份。'),
-    h('div.tiny.sub', { style: { marginTop: '24px' } }, `版本 ${VERSION}`),
-    standalone ? null : h('div.small', { style: { marginTop: '14px', lineHeight: 1.7, padding: '12px 14px', background: 'var(--tile)', borderRadius: '6px' } },
-      'iPhone 上建议在 Safari 点「分享」→「添加到主屏幕」，像 App 一样打开。不添加的话，Safari 可能在你一段时间没打开后清掉数据。'),
-  );
+  ];
 }
 
-function birthFields() {
+function fortuneHelpPage() {
+  const para = t => h('div.small', { style: { lineHeight: 1.8, marginTop: '14px' } }, t);
+  return [
+    para('八字：按出生时间的真太阳时排四柱（按出生区县的经度校正，会自动处理 1986–1991 年夏令时），判断日主强弱后定喜用神；填了性别会加上当前大运。'),
+    para('每天从喜用神里挑一个今天最得力的五行，幸运色和幸运配饰都从它来。星盘：看今天月亮所在星座和你的上升（不知道时辰就用太阳）合不合拍，用来在颜色里做取舍。'),
+    para('导入测测截图或手动填写的当天，以那份为准。仅供娱乐。'),
+    para('隐私：出生信息只存在这台设备上；生成「建议 / 避免」时，只把今天的幸运色、配饰、五行和性别发给模型，不发生日、时间和八字。'),
+  ];
+}
+
+function dataPage(redraw) {
+  const all = store.items, last = store.lastWorn(), t = today();
+  const idle = all.filter(i => !last[i.id]).length;
+  const stale = all.filter(i => last[i.id] && daysBetween(last[i.id], t) > 30).length;
+  return [
+    h('div', { style: { fontSize: '15px', marginTop: '16px', lineHeight: 1.7 } },
+      all.length ? `共 ${all.length} 件，${idle} 件从没穿过，${stale} 件超过 30 天没穿。` : '衣橱还是空的。'),
+    h('div.group',
+      cell('导出备份', '', doExport),
+      cell('导入备份', '', () => pickFiles($('pickBackup'), async ([f]) => {
+        try { const n = await importBackup(f); toast(`已导入 ${n} 件`); outfit = null; redraw(); }
+        catch (e) { toast(e.message); }
+      }))),
+    h('div.sub.small', { style: { marginTop: '14px', lineHeight: 1.7 } },
+      '衣服照片和穿着记录只存在这台设备的浏览器里，不上传。导入时，截图会发给你选的模型服务做识别。备份里不含 API Key 和个人资料。清除浏览器数据会清空衣橱，记得定期导出备份。'),
+  ];
+}
+
+function aboutPage() {
+  const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  return [
+    h('div.small', { style: { marginTop: '14px' } }, `版本 ${VERSION}`),
+    h('div.small', { style: { marginTop: '14px', lineHeight: 1.7, padding: '12px 14px', background: 'var(--tile)', borderRadius: '6px' } },
+      standalone ? '已经是从主屏幕打开的。更新会在后台自动下载，切回 App 时生效；偶尔需要关掉再开一次。'
+        : 'iPhone 上建议在 Safari 点「分享」→「添加到主屏幕」，像 App 一样打开。不添加的话，Safari 可能在你一段时间没打开后清掉数据。'),
+  ];
+}
+
+function birthFields(redraw) {
   const b = settings.birth;
-  const changed = () => { settings.save(); outfit = null; if (b.date) ensureLibs(); };
+  const changed = () => { settings.save(); outfit = null; if (b.date) ensureLibs(); }; // no redraw here: it would close an open date/time picker
   const unknown = !b.time;
   const time = h('input', { type: 'time', value: b.time, disabled: unknown,
     onchange: e => { b.time = e.target.value; changed(); } });
-  const gBtn = (v, label) => h('button.chip', { class: b.gender === v ? 'on' : '', onclick: () => { b.gender = b.gender === v ? '' : v; changed(); renderSettings(); } }, label);
+  const gBtn = (v, label) => h('button.chip', { class: b.gender === v ? 'on' : '', onclick: () => { b.gender = b.gender === v ? '' : v; changed(); redraw(); } }, label);
   return h('div',
-    h('div.field', { style: { marginTop: '4px' } }, h('span', '性别'),
+    h('div.field', h('span', '性别'),
       h('div.chips', gBtn('male', '男'), gBtn('female', '女')),
       h('small', '用来排大运（阳男阴女顺排）。不填就不算大运。')),
     h('label.field', h('span', '出生日期'),
-      h('input', { type: 'date', value: b.date, max: today(), min: '1920-01-01', onchange: e => { b.date = e.target.value; changed(); renderSettings(); } })),
+      h('input', { type: 'date', value: b.date, max: today(), min: '1920-01-01', onchange: e => { b.date = e.target.value; changed(); redraw(); } })),
     h('label.field', h('span', '出生时间'), time),
     h('button.row', { style: { padding: '8px 0', gap: '8px' }, onclick: () => {
-      b.time = b.time ? '' : '12:00'; changed(); renderSettings();
+      b.time = b.time ? '' : '12:00'; changed(); redraw();
     } }, h('span.check', { class: unknown ? 'on' : '', style: { width: '28px', height: '28px' } }, h('i', unknown ? '✓' : '')),
       h('span.small', '不确定出生时间（不排时柱、不算上升）')),
     h('label.field', h('span', '出生地'),
       h('button', { style: { width: '100%', minHeight: '46px', border: '1px solid var(--line)', borderRadius: '6px', padding: '10px 12px', textAlign: 'left', fontSize: '16px' },
-        onclick: () => regionPicker(place => { b.place = place; changed(); renderSettings(); }) },
+        onclick: () => regionPicker(place => { b.place = place; changed(); redraw(); }) },
         `${b.place?.name ?? cityOf(b.city).name}  ▾`),
-      h('small', `${b.place?.approx ? '这个区县的坐标用的是所在城市的位置，误差一般在几分钟以内。' : ''}精确到区县，用来做真太阳时校正和算上升星座。出生信息只存在这台设备上；生成每日建议时，只会把今天的幸运色这类结果和性别发给模型，不发生日、时间和八字。`)));
+      h('small', `${b.place?.approx ? '这个区县的坐标用的是所在城市的位置，误差一般在几分钟以内。' : ''}精确到区县，用来做真太阳时校正和算上升星座。出生信息只存在这台设备上，不发给模型。`)));
 }
 
 // ---------------- 出生地选择：省 → 市 → 区县，或直接搜 ----------------
