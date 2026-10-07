@@ -5,6 +5,7 @@ import { PROVIDERS, providerOf, missingOf, modelOf, recognize, recognizeFortune,
 import { computeFortune } from './fortune.js';
 import { computeDaily, loadLibs, themeOf } from './daily.js';
 import { CITIES, cityOf } from './cities.js';
+import { isAndroid, saveFile, legacyBackup, legacyDone } from './native.js';
 import { store, imageUrl, putImage, revoke, exportBackup, importBackup, sweepImages } from './db.js';
 import { decode, toDataUrl, toBlob, crop } from './images.js';
 
@@ -941,7 +942,8 @@ function aboutPage() {
   return [
     h('div.small', { style: { marginTop: '14px' } }, `版本 ${VERSION}`),
     h('div.small', { style: { marginTop: '14px', lineHeight: 1.7, padding: '12px 14px', background: 'var(--tile)', borderRadius: '6px' } },
-      standalone ? '已经是从主屏幕打开的。更新会在后台自动下载，切回 App 时生效；偶尔需要关掉再开一次。'
+      isAndroid ? '安卓版和网页版是同一套代码，功能一致；数据各存各的，可以用「备份与恢复」互相搬。'
+        : standalone ? '已经是从主屏幕打开的。更新会在后台自动下载，切回 App 时生效；偶尔需要关掉再开一次。'
         : 'iPhone 上建议在 Safari 点「分享」→「添加到主屏幕」，像 App 一样打开。不添加的话，Safari 可能在你一段时间没打开后清掉数据。'),
   ];
 }
@@ -1031,6 +1033,7 @@ async function doExport() {
   try {
     const blob = await exportBackup();
     const name = `衣橱备份-${today()}.json`;
+    if (isAndroid) { saveFile(name, await blob.text()); return; }
     const file = new File([blob], name, { type: 'application/json' });
     if (navigator.canShare?.({ files: [file] })) {
       await navigator.share({ files: [file], title: name }).catch(() => {});
@@ -1042,6 +1045,43 @@ async function doExport() {
   } catch (e) { toast(`导出失败：${e.message ?? e}`); }
 }
 
+// =============================== Android ===============================
+
+/** First run of the WebView build: bring over clothes, photos, wear history and API Keys from the old native app. */
+async function migrateLegacy() {
+  const json = legacyBackup();
+  if (!json) return;
+  try {
+    const data = JSON.parse(json);
+    const n = await importBackup({ text: async () => json });
+    const s = data.settings ?? {};
+    for (const k of ['key', 'model', 'endpoint']) {
+      for (const [id, v] of Object.entries(s[k] ?? {})) if (!settings[k][id]) settings[k][id] = v; // never overwrite
+    }
+    if (s.provider && s.key?.[s.provider]) settings.provider = s.provider;
+    if (s.weather) settings.weather = s.weather;
+    if (OCCASIONS.includes(s.occasion)) settings.occasion = s.occasion;
+    settings.save();
+    legacyDone();
+    if (n) toast(`已从旧版搬过来 ${n} 件`);
+  } catch (e) {
+    toast(`旧版数据没能搬过来，下次打开会再试：${e.message ?? e}`); // not marked done, so it retries
+  }
+}
+
+/** Android back button: close the top sheet or page; otherwise go to 今天; false lets the app exit. */
+window.closetBack = () => {
+  // The topmost overlay is the last one in the DOM; use its own back/cancel button so its cleanup runs.
+  const top = [...document.querySelectorAll('.scrim, .screen')].sort((a, b) => (+getComputedStyle(a).zIndex || 0) - (+getComputedStyle(b).zIndex || 0)).pop();
+  if (top) {
+    const btn = top.querySelector('.back') ?? [...top.querySelectorAll('button')].find(b => ['取消', '关闭'].includes(b.textContent.trim()));
+    if (btn) btn.click(); else top.remove();
+    return true;
+  }
+  if (page !== 'today' && store.items.length) { show('today'); return true; }
+  return false;
+};
+
 // =============================== start ===============================
 
 (async () => {
@@ -1052,9 +1092,10 @@ async function doExport() {
     return;
   }
   sweepImages();
+  await migrateLegacy();
   await ensureLibs();
   show(store.items.length ? 'today' : 'closet');
-  if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+  if (!isAndroid && 'serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
     // A new version takes over in the background; reload once so it shows now, unless something is open.
     const hadController = !!navigator.serviceWorker.controller;
     navigator.serviceWorker.addEventListener('controllerchange', () => {

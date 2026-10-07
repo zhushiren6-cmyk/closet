@@ -1,4 +1,5 @@
 // Model providers, the recognition prompt, response parsing and the browser client.
+import { isAndroid, nativePost } from './native.js';
 import { normalizeCat, normalizeColor, OCCASIONS, COLOR_NAMES } from './engine.js';
 
 /**
@@ -137,23 +138,29 @@ export async function chat(s, userContent, { system = SYSTEM_PROMPT, maxTokens =
   const useThinking = thinking ?? !!p.thinking;
   if (useThinking) body.thinking = { type: 'disabled' };
 
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-  let res;
-  try {
-    res = await fetch(endpointOf(s, p), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${s.key[p.id].trim()}` },
-      body: JSON.stringify(body),
-      signal: ctrl.signal,
-    });
-  } catch (e) {
-    if (e.name === 'AbortError') throw new VisionError('请求超时，网络慢或图片太大，请重试。');
-    // fetch only rejects like this on network failure or when the server does not allow browser (CORS) calls.
-    throw new VisionError(`连不上 ${p.label}。可能是网络问题，也可能是这家服务不允许网页直接调用，可以换一家试试。`, String(e.message ?? e));
-  } finally { clearTimeout(timer); }
-
-  const text = await res.text();
+  const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${s.key[p.id].trim()}` };
+  let res, text;
+  if (isAndroid) {
+    // The Android app sends the request natively: no CORS, so every provider works.
+    try { res = await nativePost(endpointOf(s, p), headers, JSON.stringify(body), timeoutMs); }
+    catch (e) {
+      if (e.name === 'TimeoutError') throw new VisionError('请求超时，网络慢或图片太大，请重试。');
+      throw new VisionError(`连不上 ${p.label}，检查一下网络。`, String(e.message ?? e));
+    }
+    res.ok = res.status >= 200 && res.status < 300;
+    text = res.text;
+  } else {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    try {
+      res = await fetch(endpointOf(s, p), { method: 'POST', headers, body: JSON.stringify(body), signal: ctrl.signal });
+    } catch (e) {
+      if (e.name === 'AbortError') throw new VisionError('请求超时，网络慢或图片太大，请重试。');
+      // fetch only rejects like this on network failure or when the server does not allow browser (CORS) calls.
+      throw new VisionError(`连不上 ${p.label}。可能是网络问题，也可能是这家服务不允许网页直接调用，可以换一家试试。`, String(e.message ?? e));
+    } finally { clearTimeout(timer); }
+    text = await res.text();
+  }
   if (!res.ok) {
     if (useThinking && res.status === 400) return chat(s, userContent, { system, maxTokens, thinking: false, timeoutMs });
     throw new VisionError(`${hint(res.status)}（HTTP ${res.status}）`, text.slice(0, 600));

@@ -3,6 +3,35 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+/** Copies web/ (minus tests) into generated assets as assets/web, stamping the version like the Pages deploy. */
+abstract class CopyWeb : DefaultTask() {
+    @get:InputDirectory @get:PathSensitive(PathSensitivity.RELATIVE) abstract val src: DirectoryProperty
+    @get:Input abstract val version: Property<String>
+    @get:OutputDirectory abstract val out: DirectoryProperty
+
+    @TaskAction fun run() {
+        val root = out.get().asFile
+        root.deleteRecursively()
+        val dest = File(root, "web")
+        src.get().asFile.copyRecursively(dest)
+        File(dest, "test").deleteRecursively()
+        val app = File(dest, "app.js")
+        val before = app.readText()
+        val after = before.replace("const VERSION = 'dev'", "const VERSION = '${version.get()}'")
+        check(after != before) { "VERSION marker not found in web/app.js" }
+        app.writeText(after)
+    }
+}
+
+val copyWeb = tasks.register<CopyWeb>("copyWeb") {
+    src.set(rootProject.layout.projectDirectory.dir("web"))
+    version.set("android " + (System.getenv("GITHUB_SHA") ?: "dev").take(7))
+}
+
+androidComponents {
+    onVariants { v -> v.sources.assets?.addGeneratedSourceDirectory(copyWeb, CopyWeb::out) }
+}
+
 android {
     namespace = "com.felix.closet"
     compileSdk = 36
@@ -47,7 +76,7 @@ dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.activity:activity-ktx:1.9.3")
-    implementation("androidx.recyclerview:recyclerview:1.3.2")
+    implementation("androidx.webkit:webkit:1.12.1")
     implementation("com.google.android.material:material:1.12.0")
     testImplementation("junit:junit:4.13.2")
     // Real org.json for JVM unit tests (android.jar only ships stubs).
