@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="词心">
+<meta name="theme-color" content="#0b0a09">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-180.png">
+<link rel="manifest" href="manifest.json">
+<title>词心</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@300;400;600&family=DM+Mono:wght@400;500&display=swap');
+:root{
+  --bg:#0b0a09;--s1:#141210;--s2:#1b1815;--bd:#2e2924;
+  --gold:#d4a574;--rose:#e8917c;--sage:#9eb384;--plum:#b08bbf;--mist:#8fa3b8;
+  --tx:#ece5dc;--tx2:#9a8e80;--tx3:#5c5248;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+html,body{background:var(--bg);}
+body{color:var(--tx);font-family:-apple-system,'PingFang SC','Noto Sans SC',sans-serif;min-height:100vh;
+  padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom);}
+.w{max-width:720px;margin:0 auto;padding:0 16px 60px;}
+button,textarea,select,input{font-family:inherit;}
+
+header{padding:18px 0 14px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--bd);}
+.logo{font-family:'Noto Serif SC',serif;font-size:21px;font-weight:600;letter-spacing:2px;}
+.logo em{font-style:normal;color:var(--gold);}
+.gear{width:38px;height:38px;border-radius:50%;border:1px solid var(--bd);background:var(--s1);color:var(--tx2);font-size:17px;cursor:pointer;}
+.gear.warn{border-color:var(--rose);color:var(--rose);}
+
+.steps{display:flex;align-items:center;padding:12px 0 0;}
+.sn{display:flex;align-items:center;gap:6px;cursor:pointer;padding:6px 6px 10px;}
+.snum{width:22px;height:22px;border-radius:50%;border:1px solid var(--bd);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--tx3);}
+.slbl{font-size:12px;color:var(--tx3);}
+.sn.on .snum{border-color:var(--gold);color:var(--gold);}
+.sn.on .slbl{color:var(--tx);}
+.sn.done .snum{border-color:var(--sage);color:var(--sage);}
+.sl{flex:1;height:1px;background:var(--bd);}
+
+.stage{display:none;padding:14px 0;}
+.stage.on{display:block;}
+.card{background:var(--s1);border:1px solid var(--bd);border-radius:14px;padding:16px;margin-bottom:12px;}
+.ct{font-family:'Noto Serif SC',serif;font-size:14.5px;margin-bottom:3px;}
+.cn{color:var(--gold);font-family:'DM Mono',monospace;font-size:10px;margin-right:6px;}
+.ch{font-size:12px;color:var(--tx2);line-height:1.7;margin-bottom:9px;}
+.ch em{color:var(--gold);font-style:normal;}
+textarea,input[type=text],input[type=password]{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--bd);background:var(--s2);color:var(--tx);font-size:15px;outline:none;line-height:1.7;}
+textarea{resize:vertical;min-height:62px;}
+textarea:focus,input:focus{border-color:var(--gold);}
+::placeholder{color:var(--tx3);}
+.egs{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;}
+.eg{padding:4px 10px;border-radius:12px;border:1px dashed var(--bd);font-size:11.5px;color:var(--tx3);cursor:pointer;}
+
+.lbl{font-size:10.5px;font-family:'DM Mono',monospace;letter-spacing:1px;color:var(--tx2);margin:2px 0 9px;}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;}
+.chip{padding:7px 13px;border-radius:18px;border:1px solid var(--bd);background:var(--s2);color:var(--tx2);font-size:12.5px;cursor:pointer;}
+.chip.on{border-color:var(--gold);color:var(--gold);background:rgba(212,165,116,.09);}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:7px;}
+.tile{padding:11px 12px;border-radius:11px;border:1px solid var(--bd);background:var(--s2);cursor:pointer;}
+.tile b{display:block;font-size:13px;font-weight:500;margin-bottom:2px;}
+.tile span{font-size:10.5px;color:var(--tx3);}
+.tile.on{border-color:var(--rose);background:rgba(232,145,124,.07);}
+.tile.on b{color:var(--rose);}
+.pens .tile.on{border-color:var(--plum);background:rgba(176,139,191,.07);}
+.pens .tile.on b{color:var(--plum);}
+.pens{display:flex;flex-direction:column;gap:6px;}
+select{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--bd);background:var(--s2);color:var(--tx);font-size:13px;outline:none;margin-bottom:14px;-webkit-appearance:none;appearance:none;}
+.srow{display:flex;align-items:center;gap:10px;}
+.srn{font-size:12px;color:var(--tx2);min-width:64px;}
+input[type=range]{flex:1;accent-color:var(--gold);}
+.sends{display:flex;justify-content:space-between;font-size:10px;color:var(--tx3);margin:2px 0 10px 74px;}
+
+.btn{width:100%;padding:14px;border-radius:12px;border:none;background:linear-gradient(135deg,var(--gold),var(--rose));color:#1a1410;font-size:14.5px;font-weight:700;cursor:pointer;letter-spacing:.5px;}
+.btn:disabled{opacity:.4;}
+.ghost{width:100%;padding:12px;border-radius:12px;border:1px solid var(--bd);background:transparent;color:var(--tx2);font-size:13px;cursor:pointer;margin-top:8px;}
+
+.paper{background:linear-gradient(160deg,#171411,#13110e);border:1px solid var(--bd);border-radius:16px;padding:26px 22px;min-height:260px;}
+.title{font-family:'Noto Serif SC',serif;font-size:21px;font-weight:600;letter-spacing:1px;margin-bottom:4px;}
+.meta{font-size:10px;color:var(--tx3);font-family:'DM Mono',monospace;margin-bottom:18px;}
+.lyr{font-family:'Noto Serif SC',serif;font-size:15.5px;line-height:2.05;font-weight:300;}
+.sec{font-family:'DM Mono',monospace;font-size:9.5px;letter-spacing:2px;color:var(--gold);text-transform:uppercase;margin:20px 0 6px;opacity:.75;}
+.sec:first-child{margin-top:0;}
+.ll{display:block;}
+.empty{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:220px;gap:10px;color:var(--tx3);font-family:'Noto Serif SC',serif;font-size:13px;text-align:center;line-height:1.7;}
+.empty.err{color:var(--rose);font-family:inherit;}
+.spin{width:30px;height:30px;border:2px solid var(--bd);border-top-color:var(--gold);border-radius:50%;animation:sp .8s linear infinite;}
+@keyframes sp{to{transform:rotate(360deg);}}
+
+.log{display:flex;gap:6px;margin:12px 0;flex-wrap:wrap;}
+.lg{flex:1;min-width:70px;padding:7px 6px;border-radius:9px;border:1px solid var(--bd);font-size:10.5px;color:var(--tx3);text-align:center;}
+.lg.run{border-color:var(--gold);color:var(--gold);}
+.lg.ok{border-color:var(--sage);color:var(--sage);}
+.crit{background:var(--s1);border:1px solid var(--bd);border-radius:12px;padding:14px;margin-bottom:12px;display:none;}
+.crit.on{display:block;}
+.crit h4{font-size:10.5px;font-family:'DM Mono',monospace;letter-spacing:1px;color:var(--rose);margin-bottom:7px;font-weight:500;}
+.crit div{font-size:12.5px;color:var(--tx2);line-height:1.8;white-space:pre-wrap;}
+.acts{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0;}
+.act{padding:11px;border-radius:10px;border:1px solid var(--bd);background:var(--s2);color:var(--tx2);font-size:13px;cursor:pointer;}
+.act:disabled{opacity:.35;}
+.pbox{background:#0d0c0a;border:1px solid var(--bd);border-radius:12px;padding:14px;margin-bottom:12px;display:none;}
+.pbox pre{font-family:'DM Mono',monospace;font-size:11px;color:var(--sage);line-height:1.8;white-space:pre-wrap;word-break:break-word;}
+.phead{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:10.5px;font-family:'DM Mono',monospace;color:var(--tx2);letter-spacing:1px;}
+.mini{padding:4px 11px;border-radius:7px;border:1px solid var(--bd);background:transparent;color:var(--tx2);font-size:11px;cursor:pointer;}
+
+/* settings sheet */
+.mask{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;z-index:10;align-items:flex-end;justify-content:center;}
+.mask.on{display:flex;}
+.sheet{background:var(--s1);border:1px solid var(--bd);border-radius:18px 18px 0 0;width:100%;max-width:720px;padding:20px 18px calc(24px + env(safe-area-inset-bottom));max-height:90vh;overflow-y:auto;}
+.sheet h3{font-family:'Noto Serif SC',serif;font-size:16px;margin-bottom:14px;}
+.note{font-size:11.5px;color:var(--tx3);line-height:1.7;margin:8px 0 14px;}
+.note b{color:var(--tx2);font-weight:500;}
+.test{font-size:12px;line-height:1.6;margin-top:10px;min-height:18px;word-break:break-word;}
+.toast{position:fixed;left:50%;bottom:calc(30px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--s2);border:1px solid var(--sage);color:var(--sage);padding:8px 18px;border-radius:20px;font-size:12.5px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:20;}
+.toast.on{opacity:1;}
+</style>
+</head>
+<body>
+<div class="w">
+<header>
+  <div class="logo">词心 <em>·</em> Lyric</div>
+  <button class="gear" id="gear" onclick="openSet()">⚙</button>
+</header>
+
+<div class="steps">
+  <div class="sn on" id="sn1" onclick="go(1)"><div class="snum">1</div><div class="slbl">故事</div></div>
+  <div class="sl"></div>
+  <div class="sn" id="sn2" onclick="go(2)"><div class="snum">2</div><div class="slbl">风格</div></div>
+  <div class="sl"></div>
+  <div class="sn" id="sn3" onclick="go(3)"><div class="snum">3</div><div class="slbl">作品</div></div>
+</div>
+
+<!-- STAGE 1 -->
+<div class="stage on" id="st1">
+  <div class="card">
+    <div class="ct"><span class="cn">01</span>这首歌是关于什么？</div>
+    <div class="ch">不写"爱情""离别"这种大词，写<em>那个具体的人、具体的事</em></div>
+    <textarea id="q1" rows="3" placeholder="例如：爷爷走的时候我没能见到最后一面…"></textarea>
+    <div class="egs">
+      <div class="eg" onclick="fill('q1',this)">异地恋三年，败给了时差</div>
+      <div class="eg" onclick="fill('q1',this)">北漂第五年，房东说房子要卖了</div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="ct"><span class="cn">02</span>忘不掉的细节或画面</div>
+    <div class="ch">越<em>小</em>越好：一件物品、一个动作、一句话</div>
+    <textarea id="q2" rows="2" placeholder="例如：手机里他的备注一直没改"></textarea>
+  </div>
+  <div class="card">
+    <div class="ct"><span class="cn">03</span>当时没说出口的话</div>
+    <div class="ch">它会成为<em>副歌的心脏</em>（可以不出现在歌词里）</div>
+    <textarea id="q3" rows="2" placeholder="例如：对不起"></textarea>
+  </div>
+  <div class="card">
+    <div class="ct"><span class="cn">04</span>现在回头看的感觉（选填）</div>
+    <textarea id="q4" rows="2" placeholder="例如：遗憾，但世事无常"></textarea>
+  </div>
+  <button class="btn" onclick="go(2)">下一步：风格 →</button>
+</div>
+
+<!-- STAGE 2 -->
+<div class="stage" id="st2">
+  <div class="card">
+    <div class="lbl">曲风</div>
+    <div class="chips" id="genres"></div>
+    <div class="lbl">语言</div>
+    <div class="chips" id="langs"></div>
+    <div class="lbl">核心意象</div>
+    <select id="imagery">
+      <option value="借物：用一个与故事相关、但不直接点题的物象承载全部情感，不直接写出核心事件">借物含蓄（推荐，如石榴树代替离世）</option>
+      <option value="直取故事里的真实物件作为核心意象，贯穿全曲">直接用故事里的真实物件</option>
+      <option value="自然物候（季节、植物、天气）作为核心意象">自然物候</option>
+    </select>
+    <div class="lbl">副歌策略</div>
+    <select id="chorus">
+      <option value="副歌极简重复一句话，每次重复情感层层递进、措辞微变">极简重复，层层递进</option>
+      <option value="把那句没说出口的话化进副歌，但不直说原话">没说出口的话化进副歌</option>
+      <option value="反高潮：副歌反而最轻最静">反高潮：副歌最轻最静</option>
+    </select>
+    <div class="lbl">表达</div>
+    <div class="srow"><span class="srn">语言质感</span><input type="range" min="1" max="5" value="3" id="rLang"></div>
+    <div class="sends"><span>口语</span><span>诗意</span></div>
+    <div class="srow"><span class="srn">情绪浓度</span><input type="range" min="1" max="5" value="2" id="rEmo"></div>
+    <div class="sends"><span>克制</span><span>浓烈</span></div>
+    <div class="srow"><span class="srn">押韵力度</span><input type="range" min="1" max="5" value="4" id="rRhy"></div>
+    <div class="sends"><span>自由</span><span>严密</span></div>
+  </div>
+  <div class="card">
+    <div class="lbl">底色</div>
+    <div class="grid2" id="tones"></div>
+  </div>
+  <div class="card">
+    <div class="lbl">笔法</div>
+    <div class="pens" id="pens"></div>
+  </div>
+  <button class="btn" id="genBtn" onclick="generate()">✦ 开始创作（初稿 → 批判 → 精修）</button>
+  <button class="ghost" onclick="go(1)">← 返回故事</button>
+</div>
+
+<!-- STAGE 3 -->
+<div class="stage" id="st3">
+  <div class="log">
+    <div class="lg" id="lg1">初稿</div>
+    <div class="lg" id="lg2">监制批判</div>
+    <div class="lg" id="lg3">精修</div>
+  </div>
+  <div class="paper" id="paper"><div class="empty">填好故事和风格后，<br>歌词会在这里落笔</div></div>
+  <div class="acts">
+    <button class="act" id="aCopy" onclick="copyLyrics()" disabled>📋 复制歌词</button>
+    <button class="act" id="aAlt" onclick="regen()" disabled>🎲 换角度重写</button>
+  </div>
+  <div class="pbox" id="pbox">
+    <div class="phead">SUNO / UDIO STYLE PROMPT <button class="mini" onclick="copyText(document.getElementById('ppre').textContent)">复制</button></div>
+    <pre id="ppre"></pre>
+  </div>
+  <div class="crit" id="crit"><h4>⚔ 监制批判</h4><div id="critTxt"></div></div>
+  <div class="card">
+    <div class="lbl">🔨 打磨工坊</div>
+    <textarea id="polin" rows="2" placeholder="例如：副歌再含蓄一点 / 第二段押 ang 韵"></textarea>
+    <button class="ghost" id="polBtn" onclick="polish()" disabled style="color:var(--plum);border-color:rgba(176,139,191,.4);">针对性打磨（只改你指定的部分）</button>
+  </div>
+</div>
+</div>
+
+<!-- SETTINGS -->
+<div class="mask" id="mask" onclick="if(event.target===this)closeSet()">
+  <div class="sheet">
+    <h3>模型设置</h3>
+    <div class="lbl">服务商</div>
+    <div class="chips" id="provs"></div>
+    <div class="lbl">API KEY</div>
+    <input type="password" id="kKey" placeholder="粘贴你的 API key" autocomplete="off">
+    <div class="lbl" style="margin-top:12px;">模型</div>
+    <input type="text" id="kModel">
+    <div class="note" id="provNote"></div>
+    <button class="btn" onclick="saveSet()">保存</button>
+    <button class="ghost" onclick="testConn()">测试连接</button>
+    <div class="test" id="testOut"></div>
+    <div class="note"><b>Key 只存在这台手机的浏览器里</b>，不会上传到任何别的地方。清除 Safari 网站数据会一并清掉，需要重新粘贴。</div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+// ═════════ CONFIG ═════════
+const PROVIDERS={
+  claude:{lbl:'Claude',model:'claude-sonnet-5-5',
+    note:'Anthropic 官方 API。<b>国内网络通常需要代理</b>才能连上。key 在 console.anthropic.com 申请。'},
+  deepseek:{lbl:'DeepSeek',model:'deepseek-flash',
+    note:'DeepSeek 官方 API，国内直连。可选模型 deepseek-flash / deepseek-v4-pro。key 在 platform.deepseek.com 申请。<b>它是否允许浏览器直连尚未验证</b>，点"测试连接"即可知道。'}
+};
+const GENRES=[
+  ['华语抒情','mandopop ballad, piano and strings, intimate vocals, 72-92 bpm'],
+  ['民谣','chinese folk, fingerpicked acoustic guitar, warm close-mic vocals, 70-90 bpm'],
+  ['流行','modern pop, catchy melody, polished production, 96-118 bpm'],
+  ['R&B','smooth R&B, rhodes piano, soulful vocals, half-time groove, 65-85 bpm'],
+  ['City Pop','city pop, nostalgic synths, groovy bassline, night drive, 95-110 bpm'],
+  ['摇滚','rock ballad, overdriven guitar, building intensity, raw vocals, 80-110 bpm'],
+  ['独立','indie pop, dreamy reverb, understated vocals, 75-100 bpm'],
+  ['影视感','cinematic ballad, orchestral build, emotional climax, 68-88 bpm'],
+  ['旋律说唱','melodic rap, emotional trap, sung hook and rap verses, 80-95 bpm'],
+];
+const LANGS=['中文','粤语','English','中英混合'];
+const TONES=[
+  ['遗憾而温柔','疼但不怨任何人'],['依然疼痛','不假装已经好了'],
+  ['释怀与感谢','终于笑着说起'],['平静的怀念','像翻旧照片'],
+  ['温暖的告白','把心意说出来'],['倔强的希望','再难也往前走'],
+];
+const PENS=[
+  ['港式留白','林夕式 · 暗涌克制，重话轻说，说一半藏一半'],
+  ['古典意象','方文山式 · 名词堆叠造景，器物载情，悖论句，句式不对称'],
+  ['白描生活流','李宗盛式 · 平常话写深情，生活细节即诗'],
+  ['散文诗感','民谣式 · 自由句式，呼吸与停顿，意象精准稀疏'],
+  ['叙事故事体','Taylor式 · 人物情节，起承转合'],
+];
+
+const SYSTEM=`你是华语乐坛最顶尖的词人。创作铁律：
+1. 用具体的物、动作、场景代替情绪形容词。"灯还亮着"好过"温暖的光"。
+2. 展示不陈述。不写"我们渐行渐远"，写"聊天记录从语音变成了嗯"。
+3. 克制：最重的话用最轻的方式说，说七分留三分；故事里最痛的那件事尽量不直接写出来，让意象替它说。
+4. 一个核心意象贯穿全曲，每次出现重量递增，首尾呼应。
+5. 禁用套话：泪流满面、心如刀割、地老天荒、沧海桑田、岁月如歌、追逐梦想、勇敢飞翔等。
+6. 动词比形容词贵。
+7. 押韵要有结构设计：同一段内韵脚统一，主歌、副歌、桥段可分属不同韵部以制造听感区分；最该悬而未决的地方可以故意断韵。
+8. 修辞服务于情感：拟人、悖论、并置、复沓，每一处都要有理由。
+9. 副歌要有一句听一遍就忘不掉的话。
+输出格式：第一行《歌名》；段落用[Verse 1][Pre-Chorus][Chorus][Bridge][Outro]等单独成行标注；每段4-8行；只输出歌名和歌词，不要任何解释。`;
+
+// ═════════ STORAGE (safe) ═════════
+const store={
+  get(k,d){try{const v=localStorage.getItem(k);return v===null?d:v;}catch(e){return d;}},
+  set(k,v){try{localStorage.setItem(k,v);return true;}catch(e){return false;}}
+};
+
+// ═════════ STATE ═════════
+const S={prov:store.get('ly_prov','claude'),genre:0,lang:0,tone:0,pen:0,story:'',params:'',lyrics:'',busy:false};
+
+// ═════════ UI BUILD ═════════
+function chips(el,items,cur,onPick){
+  el.innerHTML='';
+  items.forEach((t,i)=>{const d=document.createElement('div');d.className='chip'+(i===cur?' on':'');d.textContent=t;
+    d.onclick=()=>{[...el.children].forEach(c=>c.classList.remove('on'));d.classList.add('on');onPick(i);};el.appendChild(d);});
+}
+function tiles(el,items,cur,onPick){
+  el.innerHTML='';
+  items.forEach((t,i)=>{const d=document.createElement('div');d.className='tile'+(i===cur?' on':'');
+    d.innerHTML='<b></b><span></span>';d.firstChild.textContent=t[0];d.lastChild.textContent=t[1];
+    d.onclick=()=>{[...el.children].forEach(c=>c.classList.remove('on'));d.classList.add('on');onPick(i);};el.appendChild(d);});
+}
+chips(document.getElementById('genres'),GENRES.map(g=>g[0]),0,i=>S.genre=i);
+chips(document.getElementById('langs'),LANGS,0,i=>S.lang=i);
+tiles(document.getElementById('tones'),TONES,0,i=>S.tone=i);
+tiles(document.getElementById('pens'),PENS,0,i=>S.pen=i);
+
+function fill(id,el){document.getElementById(id).value=el.textContent;}
+function go(n){
+  document.querySelectorAll('.stage').forEach(s=>s.classList.remove('on'));
+  document.getElementById('st'+n).classList.add('on');
+  [1,2,3].forEach(i=>{const e=document.getElementById('sn'+i);e.classList.toggle('on',i===n);e.classList.toggle('done',i<n);});
+  window.scrollTo(0,0);
+}
+function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('on');clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove('on'),1600);}
+function lg(n,st){const e=document.getElementById('lg'+n);e.classList.remove('run','ok');if(st)e.classList.add(st);}
+
+// ═════════ SETTINGS ═════════
+function keyFor(p){return store.get('ly_key_'+p,'');}
+function modelFor(p){return store.get('ly_model_'+p,PROVIDERS[p].model);}
+function refreshGear(){document.getElementById('gear').classList.toggle('warn',!keyFor(S.prov));}
+let setProv=S.prov;
+function renderSet(){
+  const ids=Object.keys(PROVIDERS);
+  chips(document.getElementById('provs'),ids.map(k=>PROVIDERS[k].lbl),ids.indexOf(setProv),i=>{setProv=ids[i];renderSet();});
+  document.getElementById('kKey').value=keyFor(setProv);
+  document.getElementById('kModel').value=modelFor(setProv);
+  document.getElementById('provNote').innerHTML=PROVIDERS[setProv].note;
+}
+function openSet(){setProv=S.prov;renderSet();document.getElementById('testOut').textContent='';document.getElementById('mask').classList.add('on');}
+function closeSet(){document.getElementById('mask').classList.remove('on');}
+function saveSet(){
+  const k=document.getElementById('kKey').value.trim();
+  const m=document.getElementById('kModel').value.trim()||PROVIDERS[setProv].model;
+  const ok=store.set('ly_key_'+setProv,k)&&store.set('ly_model_'+setProv,m)&&store.set('ly_prov',setProv);
+  S.prov=setProv;refreshGear();
+  if(!ok){document.getElementById('testOut').innerHTML='<span style="color:var(--rose)">浏览器禁止本地存储（可能是无痕模式），key 只在本次打开期间有效。</span>';}
+  else{closeSet();toast('已保存 · '+PROVIDERS[S.prov].lbl);}
+}
+async function testConn(){
+  const out=document.getElementById('testOut');
+  const k=document.getElementById('kKey').value.trim();
+  const m=document.getElementById('kModel').value.trim()||PROVIDERS[setProv].model;
+  if(!k){out.innerHTML='<span style="color:var(--rose)">先粘贴 key</span>';return;}
+  out.style.color='var(--tx2)';out.textContent='连接中…';
+  try{const r=await callModel(setProv,k,m,'回复两个字：收到',64,'你是助手。');
+    out.innerHTML='<span style="color:var(--sage)">✓ 连接成功，模型回复：'+esc(r.slice(0,40))+'</span>';}
+  catch(e){out.innerHTML='<span style="color:var(--rose)">✗ '+esc(e.message)+'</span>';}
+}
+
+// ═════════ API ═════════
+function buildRequest(prov,key,model,user,maxTokens,system){
+  if(prov==='claude'){
+    return {url:'https://api.anthropic.com/v1/messages',init:{method:'POST',headers:{
+      'content-type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01',
+      'anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({model,max_tokens:maxTokens,system,messages:[{role:'user',content:user}]})}};
+  }
+  return {url:'https://api.deepseek.com/chat/completions',init:{method:'POST',headers:{
+    'Content-Type':'application/json','Authorization':'Bearer '+key},
+    body:JSON.stringify({model,max_tokens:maxTokens,stream:false,
+      messages:[{role:'system',content:system},{role:'user',content:user}]})}};
+}
+function parseResponse(prov,status,raw){
+  let d=null;try{d=JSON.parse(raw);}catch(e){}
+  if(status<200||status>=300){
+    const msg=d&&d.error?(d.error.message||JSON.stringify(d.error)):String(raw).slice(0,160);
+    if(status===401||status===403)throw new Error('Key 无效或无权限（'+status+'）：'+msg);
+    if(status===402)throw new Error('账户余额不足（402），请先充值：'+msg);
+    if(status===429)throw new Error('请求太频繁或余额不足（429）：'+msg);
+    if(status===404)throw new Error('模型名可能写错了（404）：'+msg);
+    throw new Error('服务返回错误 '+status+'：'+msg);
+  }
+  if(!d)throw new Error('响应不是 JSON：'+String(raw).slice(0,120));
+  let text='';
+  if(prov==='claude')text=(d.content||[]).filter(c=>c.type==='text').map(c=>c.text).join('');
+  else text=(d.choices&&d.choices[0]&&d.choices[0].message&&d.choices[0].message.content)||'';
+  if(!text.trim())throw new Error('模型返回了空内容，请重试');
+  return text.trim();
+}
+async function callModel(prov,key,model,user,maxTokens,system){
+  const {url,init}=buildRequest(prov,key,model,user,maxTokens,system);
+  const ctl=new AbortController();const timer=setTimeout(()=>ctl.abort(),120000);
+  let resp;
+  try{resp=await fetch(url,{...init,signal:ctl.signal});}
+  catch(e){
+    clearTimeout(timer);
+    if(e.name==='AbortError')throw new Error('等待超过 2 分钟，已取消。网络慢或模型繁忙，请重试');
+    throw new Error(prov==='claude'
+      ?'连不上 Anthropic。国内网络需要开代理后再试'
+      :'连不上 DeepSeek。可能是网络问题，或 DeepSeek 不允许浏览器直连（这种情况请切换到 Claude）');
+  }
+  const raw=await resp.text();clearTimeout(timer);
+  return parseResponse(prov,resp.status,raw);
+}
+function ask(user,maxTokens=4096){
+  const k=keyFor(S.prov);
+  if(!k){openSet();throw new Error('还没有设置 API key');}
+  return callModel(S.prov,k,modelFor(S.prov),user,maxTokens,SYSTEM);
+}
+
+// ═════════ FLOW ═════════
+function collect(){
+  const v=id=>document.getElementById(id).value.trim();
+  const q=[v('q1'),v('q2'),v('q3'),v('q4')];
+  if(!q[0]&&!q[1]&&!q[2])return null;
+  const L=['核心故事','忘不掉的细节','没说出口的话','现在的感觉'];
+  S.story=q.map((x,i)=>x?L[i]+'：'+x:'').filter(Boolean).join('\n');
+  const P=PENS[S.pen],T=TONES[S.tone];
+  S.params=[
+    '曲风：'+GENRES[S.genre][0],'语言：'+LANGS[S.lang],
+    '底色：'+T[0]+'，'+T[1],'笔法：'+P[0]+'（'+P[1]+'）',
+    '核心意象：'+document.getElementById('imagery').value,
+    '副歌策略：'+document.getElementById('chorus').value,
+    '语言质感 '+document.getElementById('rLang').value+'/5（1口语 5诗意）',
+    '情绪浓度 '+document.getElementById('rEmo').value+'/5（1克制 5浓烈）',
+    '押韵力度 '+document.getElementById('rRhy').value+'/5（1自由 5严密）'
+  ].join('\n');
+  return true;
+}
+function setBusy(b){
+  S.busy=b;
+  ['genBtn','aCopy','aAlt','polBtn'].forEach(id=>{document.getElementById(id).disabled=b||(id!=='genBtn'&&!S.lyrics);});
+}
+function showLoading(msg){document.getElementById('paper').innerHTML='<div class="empty"><div class="spin"></div>'+esc(msg)+'</div>';}
+function showError(msg){
+  document.getElementById('paper').innerHTML='<div class="empty err">⚠ '+esc(msg)+'</div>';
+  if(S.lyrics)setTimeout(()=>{if(!S.busy)renderLyrics(S.lyrics);},4000);
+}
+
+async function generate(){
+  if(S.busy)return;
+  if(!collect()){alert('至少填写一题故事');go(1);return;}
+  if(!keyFor(S.prov)){openSet();return;}
+  go(3);setBusy(true);
+  [1,2,3].forEach(n=>lg(n,null));
+  document.getElementById('crit').classList.remove('on');
+  document.getElementById('pbox').style.display='none';
+  try{
+    lg(1,'run');showLoading('初稿落笔中…');
+    const draft=await ask('【故事素材】\n'+S.story+'\n\n【风格设定】\n'+S.params+'\n\n请基于这个真实故事创作完整歌词，把故事里最珍贵的细节真正用进去。');
+    lg(1,'ok');lg(2,'run');showLoading('监制逐行审查…');
+    const crit=await ask('现在你换成最严苛的歌词监制，只找问题不夸奖。审查下面的初稿：①哪些句子是情绪形容词而不是细节；②哪些是套话；③副歌那句够不够忘不掉；④核心意象是否贯穿且重量递增；⑤押韵结构是否成体系，哪里韵脚乱了；⑥是否太直白，把该藏的事说破了。输出3-5条意见，每条指出原句和修改方向，总共不超过220字。只输出意见。\n\n【故事】\n'+S.story+'\n\n【初稿】\n'+draft,1024);
+    document.getElementById('critTxt').textContent=crit;document.getElementById('crit').classList.add('on');
+    lg(2,'ok');lg(3,'run');showLoading('精修每一行…');
+    const fin=await ask('【故事素材】\n'+S.story+'\n\n【风格设定】\n'+S.params+'\n\n【初稿】\n'+draft+'\n\n【监制意见】\n'+crit+'\n\n请根据监制意见精修出最终版：保留初稿里真正好的句子，重写被批评的部分。目标是让听的人在副歌处心里一沉。');
+    lg(3,'ok');
+    S.lyrics=fin;renderLyrics(fin);renderPrompt();
+  }catch(e){[1,2,3].forEach(n=>{const el=document.getElementById('lg'+n);if(el.classList.contains('run'))lg(n,null);});showError(e.message);}
+  setBusy(false);
+}
+async function regen(){
+  if(S.busy||!S.lyrics)return;
+  setBusy(true);showLoading('换个角度重新进入这个故事…');
+  try{
+    const r=await ask('【故事素材】\n'+S.story+'\n\n【风格设定】\n'+S.params+'\n\n【上一版】\n'+S.lyrics+'\n\n请用完全不同的切入重写：换一个核心意象，换一种叙事视角（物的视角、多年后回望、对方的视角等），不要沿用上一版的句子。');
+    S.lyrics=r;renderLyrics(r);
+  }catch(e){showError(e.message);}
+  setBusy(false);
+}
+async function polish(){
+  const req=document.getElementById('polin').value.trim();
+  if(S.busy||!S.lyrics||!req)return;
+  setBusy(true);showLoading('打磨中…');
+  try{
+    const r=await ask('【当前歌词】\n'+S.lyrics+'\n\n【故事背景】\n'+S.story+'\n\n【修改要求】\n'+req+'\n\n只修改要求涉及的部分，其余歌词、段落顺序一字不动，输出完整歌词。');
+    S.lyrics=r;renderLyrics(r);document.getElementById('polin').value='';toast('已打磨');
+  }catch(e){showError(e.message);}
+  setBusy(false);
+}
+
+// ═════════ RENDER ═════════
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function parseLyrics(txt){
+  const out={title:'',blocks:[]};
+  String(txt).replace(/```[a-z]*\n?/gi,'').split('\n').forEach(l=>{
+    const t=l.trim().replace(/^\*\*(.+)\*\*$/,'$1');
+    if(!t){out.blocks.push({type:'gap'});return;}
+    const m=t.match(/^《(.+?)》$/)||t.match(/^#+\s*《?(.+?)》?$/);
+    if(m&&!out.title){out.title=m[1];return;}
+    if(/^[\[【].+[\]】]$/.test(t)){out.blocks.push({type:'sec',text:t.slice(1,-1)});return;}
+    if(/^-{3,}$/.test(t))return;
+    out.blocks.push({type:'line',text:t});
+  });
+  while(out.blocks.length&&out.blocks[out.blocks.length-1].type==='gap')out.blocks.pop();
+  return out;
+}
+function renderLyrics(txt){
+  const p=parseLyrics(txt);
+  const body=p.blocks.map(b=>b.type==='gap'?'<div style="height:6px"></div>':b.type==='sec'?'<div class="sec">'+esc(b.text)+'</div>':'<span class="ll">'+esc(b.text)+'</span>').join('');
+  document.getElementById('paper').innerHTML='<div class="title">《'+esc(p.title||'无题')+'》</div><div class="meta">'+esc(GENRES[S.genre][0]+' · '+LANGS[S.lang]+' · '+PROVIDERS[S.prov].lbl)+'</div><div class="lyr">'+body+'</div>';
+}
+function renderPrompt(){
+  const langMap={'中文':'Mandarin Chinese','粤语':'Cantonese','English':'English','中英混合':'Mandarin and English'};
+  const tone=TONES[S.tone][0];
+  const toneEn={'遗憾而温柔':'tender regret','依然疼痛':'raw lingering grief','释怀与感谢':'grateful acceptance','平静的怀念':'quiet nostalgia','温暖的告白':'warm confession','倔强的希望':'stubborn hope'}[tone]||'emotional';
+  document.getElementById('ppre').textContent=GENRES[S.genre][1]+', '+toneEn+', restrained emotional delivery, '+langMap[LANGS[S.lang]]+' vocals';
+  document.getElementById('pbox').style.display='block';
+}
+function lyricsPlain(){
+  const p=parseLyrics(S.lyrics);
+  return (p.title?'《'+p.title+'》\n\n':'')+p.blocks.map(b=>b.type==='gap'?'':b.type==='sec'?'['+b.text+']':b.text).join('\n').replace(/\n{3,}/g,'\n\n');
+}
+function copyText(t){
+  const fallback=()=>{const ta=document.createElement('textarea');ta.value=t;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();
+    let ok=false;try{ok=document.execCommand('copy');}catch(e){}document.body.removeChild(ta);toast(ok?'已复制':'复制失败，请长按选择');};
+  if(navigator.clipboard&&window.isSecureContext)navigator.clipboard.writeText(t).then(()=>toast('已复制'),fallback);else fallback();
+}
+function copyLyrics(){if(S.lyrics)copyText(lyricsPlain());}
+
+refreshGear();
+if(!keyFor(S.prov))setTimeout(openSet,300);
+</script>
+</body>
+</html>

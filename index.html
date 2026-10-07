@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>衣橱</title>
+  <meta name="description" content="导入购物截图，自动整理衣橱，每天给一套搭配。">
+  <!-- One plain theme-color: iOS home-screen apps ignore media-specific ones and paint the status bar grey. -->
+  <meta name="theme-color" content="#FAF9F6" id="themeColor">
+  <script>if (matchMedia('(prefers-color-scheme: dark)').matches) document.getElementById('themeColor').content = '#131312';</script>
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="衣橱">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <div id="app">
+    <main id="p-today" class="page"></main>
+    <main id="p-closet" class="page" hidden></main>
+    <main id="p-settings" class="page" hidden></main>
+    <nav class="tabs-bottom">
+      <button data-p="today">今天</button>
+      <button data-p="closet">衣橱</button>
+      <button data-p="settings">设置</button>
+    </nav>
+  </div>
+  <input id="pick" type="file" accept="image/*" multiple hidden>
+  <input id="pick1" type="file" accept="image/*" hidden>
+  <input id="pickBackup" type="file" accept="application/json,.json" hidden>
+  <div id="toast"></div>
+  <noscript>需要开启 JavaScript 才能使用。</noscript>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
